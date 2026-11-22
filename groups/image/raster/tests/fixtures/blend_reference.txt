@@ -1,0 +1,51 @@
+# Hand arithmetic from W3C Compositing and Blending Level 1.
+# Columns: mode backdrop source expected. Channels are in [0,1].
+# normal: B(b,s)=s
+normal 0.25 0.75 0.75
+# multiply: b*s; 1/4 * 3/4 = 3/16
+multiply 0.25 0.75 0.1875
+multiply 0 1 0
+multiply 1 1 1
+# screen: b+s-b*s; 1-3/16 = 13/16
+screen 0.25 0.75 0.8125
+# overlay: b<=1/2 ? 2*b*s : 1-2*(1-b)*(1-s)
+overlay 0.25 0.75 0.375
+overlay 0.75 0.25 0.625
+overlay 0.5 0.25 0.25
+# darken: min(b,s)
+darken 0.25 0.75 0.25
+# lighten: max(b,s)
+lighten 0.25 0.75 0.75
+# color-dodge: b=0 -> 0; else s=1 -> 1; else min(1,b/(1-s))
+color-dodge 0.25 0.5 0.5
+color-dodge 0.75 0.5 1
+color-dodge 0 1 0
+color-dodge 0.25 1 1
+# color-burn: b=1 -> 1; else s=0 -> 0; else 1-min(1,(1-b)/s)
+color-burn 0.75 0.5 0.5
+color-burn 0.25 0.5 0
+color-burn 1 0 1
+color-burn 0.75 0 0
+# hard-light: s<=1/2 ? 2*b*s : 1-2*(1-b)*(1-s)
+hard-light 0.25 0.75 0.625
+hard-light 0.75 0.25 0.375
+hard-light 0.25 0.5 0.25
+# soft-light: s<=1/2: b-(1-2*s)*b*(1-b)
+soft-light 0.25 0.25 0.15625
+# s>1/2: b+(2*s-1)*(D(b)-b).
+# D(b)=((16*b-12)*b+4)*b for b<=1/4, otherwise sqrt(b).
+# b=1/8: D=((2-12)/8+4)/8=11/32; result=1/8+(11/32-1/8)/2=15/64.
+soft-light 0.125 0.75 0.234375
+# b=1/4: D=1/2; result=1/4+(1/2-1/4)/2=3/8.
+soft-light 0.25 0.75 0.375
+# b=9/16: D=3/4; result=9/16+(3/4-9/16)/2=21/32.
+soft-light 0.5625 0.75 0.65625
+soft-light 0 1 0
+soft-light 1 1 1
+soft-light 0.25 0.5 0.25
+# difference: abs(b-s)
+difference 0.25 0.75 0.5
+difference 0.75 0.25 0.5
+difference 0.5 0.5 0
+# exclusion: b+s-2*b*s; 1-6/16=5/8
+exclusion 0.25 0.75 0.625
