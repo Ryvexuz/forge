@@ -40,27 +40,34 @@ fn every_error_kind_and_byte_offset() {
 
 #[test]
 fn malformed_syntax_is_rejected() {
-    for text in [
-        "",
-        "+1",
-        ".1",
-        "-",
-        "1.",
-        "1e+",
-        "NaN",
-        "Infinity",
-        "[1 2]",
-        "{\"a\" 1}",
-        "{\"a\":1,}",
-        "/*x*/null",
-        "tru",
-        "\"\\uD800x\"",
-        "\"\\u12xz\"",
-        "\"\\",
-        "\"unterminated",
-        "\u{a0}null",
+    use ErrorKind::*;
+    for (text, kind, offset) in [
+        ("", UnexpectedEnd, 0),
+        ("+1", UnexpectedToken, 0),
+        (".1", UnexpectedToken, 0),
+        ("-", InvalidNumber, 1),
+        ("1.", InvalidNumber, 2),
+        ("1e+", InvalidNumber, 3),
+        ("NaN", UnexpectedToken, 0),
+        ("Infinity", UnexpectedToken, 0),
+        ("[1 2]", UnexpectedToken, 3),
+        ("{\"a\"}", UnexpectedToken, 4),
+        ("{\"a\" 1}", UnexpectedToken, 5),
+        ("{\"a\":1,}", UnexpectedToken, 7),
+        ("/*x*/null", UnexpectedToken, 0),
+        ("tru", UnexpectedEnd, 3),
+        // High surrogate not followed by a low-surrogate escape.
+        ("\"\\uD800x\"", InvalidUnicode, 7),
+        ("\"\\uD800\"", InvalidUnicode, 7),
+        ("\"\\uD800\\u0041\"", InvalidUnicode, 13),
+        // A bad hex digit is reported at the digit itself.
+        ("\"\\u12xz\"", InvalidUnicode, 5),
+        ("\"\\", UnexpectedEnd, 2),
+        ("\"unterminated", UnexpectedEnd, 13),
+        ("\u{a0}null", UnexpectedToken, 0),
     ] {
-        assert!(read(text).is_err(), "{text:?}");
+        let error = read(text).expect_err(text);
+        assert_eq!((error.kind, error.offset), (kind, offset), "{text:?}");
     }
 }
 
