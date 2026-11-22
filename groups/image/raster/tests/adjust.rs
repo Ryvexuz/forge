@@ -21,7 +21,7 @@ fn reference(pixel: [f32; 4], adjustment: &Adjustment) -> [f64; 4] {
             ((v - 0.5) * f64::from(*contrast) + 0.5 + f64::from(*brightness)).clamp(0.0, 1.0)
         }),
         Adjustment::Curve { table } => rgb.map(|v| {
-            let x = v * 255.0;
+            let x = (v * 255.0).clamp(0.0, 255.0);
             let lo = x as usize;
             let hi = (lo + 1).min(255);
             f64::from(table[lo]) + (f64::from(table[hi]) - f64::from(table[lo])) * x.fract()
@@ -152,6 +152,40 @@ fn invalid_parameters_fail_even_on_transparent_tiles() {
             assert_eq!(
                 curve(&tile, &table),
                 Err(AdjustmentError::InvalidCurveEntry { index })
+            );
+        }
+    }
+}
+
+#[test]
+fn curve_clamps_at_the_alpha_boundary_and_tiles_refuse_channels_above_alpha() {
+    // A channel above alpha would give a table position above 255; Tile refuses it,
+    // so the curve arm only ever sees positions in [0, 255] (and clamps anyway).
+    let mut over = vec![[0.0; 4]; TILE_PIXEL_COUNT];
+    over[5] = [0.6, 0.1, 0.1, 0.5];
+    assert!(Tile::from_pixels(over).is_err());
+    let mut pixels = vec![[0.0; 4]; TILE_PIXEL_COUNT];
+    pixels[0] = [0.5, 0.25, 0.0, 0.5];
+    pixels[1] = [1.0, 1.0, 1.0, 1.0];
+    let source = Tile::from_pixels(pixels).unwrap();
+    let adjustment = Adjustment::Curve {
+        table: Box::new(std::array::from_fn(|i| {
+            (i as f32 / 255.0) * 0.5 + 0.25 * (i % 2) as f32
+        })),
+    };
+    let output = adjustment.apply(&source).unwrap();
+    for (index, (&input, actual)) in source
+        .pixels()
+        .iter()
+        .zip(output.pixels())
+        .enumerate()
+        .take(2)
+    {
+        let expected = reference(input, &adjustment);
+        for channel in 0..4 {
+            assert!(
+                (f64::from(actual[channel]) - expected[channel]).abs() <= 1e-6,
+                "pixel {index} channel {channel}"
             );
         }
     }

@@ -87,7 +87,7 @@ impl Adjustment {
                             .clamp(0.0, 1.0)
                     }),
                     Self::Curve { table } => rgb.map(|c| {
-                        let position = c * 255.0;
+                        let position = (c * 255.0).clamp(0.0, 255.0);
                         let lower = (position.floor() as usize).min(254);
                         let weight = position - lower as f64;
                         f64::from(table[lower]) * (1.0 - weight)
