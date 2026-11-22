@@ -87,8 +87,8 @@ fn audio_matches_independent_golden() {
     assert_eq!(bytes.len(), 256 * 4);
     let mut output = [0.0; 256];
     fading_timeline().render(0, &mut output).unwrap();
-    for (index, (actual, bytes)) in output.iter().zip(bytes.chunks_exact(4)).enumerate() {
-        let expected = f32::from_le_bytes(bytes.try_into().unwrap());
+    for (index, (actual, bytes)) in output.iter().zip(bytes.as_chunks::<4>().0).enumerate() {
+        let expected = f32::from_le_bytes(*bytes);
         assert!(
             (actual - f64::from(expected)).abs() <= 1e-6,
             "sample {index}: actual={actual}, golden={expected}"
