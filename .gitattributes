@@ -1,0 +1,8 @@
+* text=auto
+*.rs text eol=lf
+*.tl text eol=lf
+*.csv text eol=lf
+*.json text eol=lf
+*.bin binary
+*.ppm binary
+*.wav binary
