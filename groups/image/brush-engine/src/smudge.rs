@@ -159,6 +159,10 @@ pub fn smudge_stroke(
     centers: &[[usize; 2]],
 ) -> Result<[i64; 4], DabError> {
     let (first, rest) = centers.split_first().ok_or(DabError::InvalidCenter)?;
+    // Validate every centre (and the buffer) before the first dab lifts any paint, so an Err leaves the canvas as it was.
+    for &center in centers {
+        footprint(dab, pixels, width, height, center)?;
+    }
     let mut stroke = Stroke::begin(dab, pixels, width, height, *first)?;
     for &center in rest {
         stroke.dab(dab, pixels, width, height, center)?;

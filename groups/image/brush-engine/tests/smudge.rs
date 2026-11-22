@@ -102,3 +102,21 @@ fn invalid_inputs_are_atomic_and_empty_stroke_is_refused() {
         assert_eq!(pixels, before);
     }
 }
+
+#[test]
+fn bad_later_centre_leaves_canvas_untouched() {
+    let dab = RoundDab::new(6.0, 1.0, 1.0, 1.0).unwrap();
+    for centres in [
+        vec![[6, 6], [7, 6], [usize::MAX, 0]],
+        vec![[6, 6], [12, 6]],
+        vec![[6, 6], [6, 12], [7, 7]],
+    ] {
+        let mut pixels = patch(12, 12, [200, 100, 50]);
+        let before = pixels.clone();
+        assert_eq!(
+            smudge_stroke(&dab, &mut pixels, 12, 12, &centres),
+            Err(DabError::InvalidCenter)
+        );
+        assert_eq!(pixels, before, "centres {centres:?}");
+    }
+}
