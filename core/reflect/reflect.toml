@@ -1,0 +1,7 @@
+# Limits for the reflect crate. Every key is required: code has no default.
+# Names follow docs/nodes/1.6.md section 5 (path length, text file size, list length, nesting depth).
+[limits]
+max_path_length = 256
+max_text_file_bytes = 1048576
+max_list_length = 4096
+max_nesting_depth = 16
