@@ -159,3 +159,39 @@ fn view_errors_and_scrubbing() {
 fn empty_timeline() -> Timeline {
     Timeline { tracks: vec![] }
 }
+
+#[test]
+fn view_offscreen_items_do_not_fail_hit_test_or_draw_list() {
+    let far = 36_000 * TICKS_PER_SECOND;
+    let clip = |start: i64, name: &str| Clip {
+        start: Time(start),
+        len: Time(20 * TICKS_PER_SECOND),
+        source: "test.wav".into(),
+        source_offset: Time(0),
+        name: name.into(),
+    };
+    let timeline = Timeline {
+        tracks: vec![Track {
+            id: 1,
+            kind: "audio".into(),
+            name: "test".into(),
+            clips: vec![clip(0, "near"), clip(far, "far")],
+            channels: vec![],
+        }],
+    };
+    // At 96,000 px/s the far clip is about 3.4e9 px away: it does not fit an i32.
+    let view = TimelineView::new(timeline.clone(), 96_000, Time(0), (4_000_000, 200)).unwrap();
+    assert_eq!(
+        view.hit_test(960_000, 40).unwrap(),
+        Target::Clip { track: 0, clip: 0 }
+    );
+    let list = view.draw_list().unwrap();
+    assert!(list.contains("\"near\""));
+    // Scrolled to the far end: the near clip is off screen on the left.
+    let view = TimelineView::new(timeline, 96_000, Time(far), (4_000_000, 200)).unwrap();
+    assert_eq!(
+        view.hit_test(960_000, 40).unwrap(),
+        Target::Clip { track: 0, clip: 1 }
+    );
+    assert!(view.draw_list().unwrap().contains("\"far\""));
+}

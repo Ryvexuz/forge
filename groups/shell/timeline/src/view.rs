@@ -139,7 +139,26 @@ impl TimelineView {
             .map_err(|_| ViewError::Overflow)
     }
 
+    /// Like `time_to_pixel`, but a position outside the `i32` range saturates (it is off screen).
+    fn time_to_pixel_clamped(&self, time: Time) -> i32 {
+        match self.time_to_pixel(time) {
+            Ok(px) => px,
+            Err(_) if time.0 < self.scroll.0 => i32::MIN,
+            Err(_) => i32::MAX,
+        }
+    }
+
     pub fn layout(&self, track: usize, clip: usize) -> Result<Option<Rect>, ViewError> {
+        self.layout_with(track, clip, false)
+    }
+
+    /// With `clamp`, pixel positions outside the `i32` range saturate instead of failing.
+    fn layout_with(
+        &self,
+        track: usize,
+        clip: usize,
+        clamp: bool,
+    ) -> Result<Option<Rect>, ViewError> {
         let Some(item) = self
             .timeline
             .tracks
@@ -154,8 +173,17 @@ impl TimelineView {
             .map_or(0, |d| d.delta.0);
         let start = item.start.0.checked_add(delta).ok_or(ViewError::Overflow)?;
         let end = start.checked_add(item.len.0).ok_or(ViewError::Overflow)?;
-        let x = self.time_to_pixel(Time(start))?;
-        let right = self.time_to_pixel(Time(end))?;
+        let (x, right) = if clamp {
+            (
+                self.time_to_pixel_clamped(Time(start)),
+                self.time_to_pixel_clamped(Time(end)),
+            )
+        } else {
+            (
+                self.time_to_pixel(Time(start))?,
+                self.time_to_pixel(Time(end))?,
+            )
+        };
         let y = i32::try_from(track)
             .ok()
             .and_then(|t| t.checked_mul(TRACK_HEIGHT))
@@ -164,7 +192,11 @@ impl TimelineView {
         Ok(Some(Rect {
             x,
             y,
-            width: right.checked_sub(x).ok_or(ViewError::Overflow)?,
+            width: if clamp {
+                right.saturating_sub(x)
+            } else {
+                right.checked_sub(x).ok_or(ViewError::Overflow)?
+            },
             height: TRACK_HEIGHT,
         }))
     }
@@ -182,7 +214,10 @@ impl TimelineView {
         };
         for (channel, data) in row.channels.iter().enumerate() {
             for (key, data) in data.keys.iter().enumerate() {
-                let px = self.time_to_pixel(data.time)?;
+                // A key whose pixel does not fit an i32 is off screen and cannot be hit.
+                let Ok(px) = self.time_to_pixel(data.time) else {
+                    continue;
+                };
                 if (i64::from(x) - i64::from(px)).abs() <= i64::from(HANDLE) {
                     return Ok(Target::Key {
                         track,
@@ -193,7 +228,7 @@ impl TimelineView {
             }
         }
         for clip in 0..row.clips.len() {
-            if let Some(rect) = self.layout(track, clip)? {
+            if let Some(rect) = self.layout_with(track, clip, true)? {
                 let right = i64::from(rect.x) + i64::from(rect.width);
                 if (i64::from(x) - i64::from(rect.x)).abs() <= i64::from(HANDLE) {
                     return Ok(Target::LeftHandle { track, clip });
@@ -278,7 +313,7 @@ impl TimelineView {
                 .ok_or(ViewError::Overflow)?;
             out.push_str(&format!("text 0 {y} label {:?}\n", row.name));
             for (clip, item) in row.clips.iter().enumerate() {
-                if let Some(r) = self.layout(track, clip)? {
+                if let Some(r) = self.layout_with(track, clip, true)? {
                     out.push_str(&format!(
                         "rect {} {} {} {} clip\n",
                         r.x, r.y, r.width, r.height
@@ -288,7 +323,9 @@ impl TimelineView {
             }
             for channel in &row.channels {
                 for key in &channel.keys {
-                    let x = self.time_to_pixel(key.time)?;
+                    let Ok(x) = self.time_to_pixel(key.time) else {
+                        continue; // off screen
+                    };
                     out.push_str(&format!(
                         "line {x} {y} {x} {} key\n",
                         y.checked_add(TRACK_HEIGHT).ok_or(ViewError::Overflow)?
@@ -296,7 +333,7 @@ impl TimelineView {
                 }
             }
         }
-        let x = self.time_to_pixel(self.playhead)?;
+        let x = self.time_to_pixel_clamped(self.playhead);
         out.push_str(&format!("line {x} 0 {x} {} playhead\n", self.size.1));
         Ok(out)
     }
