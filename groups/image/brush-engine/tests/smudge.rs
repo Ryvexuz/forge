@@ -120,3 +120,36 @@ fn bad_later_centre_leaves_canvas_untouched() {
         assert_eq!(pixels, before, "centres {centres:?}");
     }
 }
+
+#[test]
+fn finish_on_saturated_paint_keeps_all_load() {
+    let (width, height) = (12, 12);
+    let dab = RoundDab::new(4.0, 1.0, 1.0, 1.0).unwrap();
+    let mut pixels = vec![255; width * height * 4];
+    let before = totals(&pixels);
+    let mut stroke = Stroke::begin(&dab, &mut pixels, width, height, [3, 3]).unwrap();
+    stroke
+        .dab(&dab, &mut pixels, width, height, [9, 9])
+        .unwrap();
+    let held = stroke.held();
+    assert!(held.iter().any(|&h| h > 0), "the load must hold paint");
+    let left = stroke.finish(&dab, &mut pixels, width, height).unwrap();
+    assert_eq!(left, [0; 4], "room existed, so nothing may be dropped");
+    assert_eq!(totals(&pixels), before, "canvas must be whole again");
+
+    let mut pixels = vec![255; width * height * 4];
+    let left = smudge_stroke(&dab, &mut pixels, width, height, &[[3, 3], [9, 9]]).unwrap();
+    for c in 0..4 {
+        assert_eq!(totals(&pixels)[c] as i64 + left[c], before[c] as i64);
+    }
+}
+
+#[test]
+fn begin_with_bad_input_leaves_canvas_untouched() {
+    let dab = RoundDab::new(6.0, 1.0, 1.0, 1.0).unwrap();
+    let mut pixels = patch(12, 12, [200, 100, 50]);
+    let before = pixels.clone();
+    assert!(Stroke::begin(&dab, &mut pixels, 12, 12, [12, 0]).is_err());
+    assert!(Stroke::begin(&dab, &mut pixels, 12, 11, [6, 6]).is_err());
+    assert_eq!(pixels, before);
+}

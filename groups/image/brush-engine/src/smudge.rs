@@ -116,8 +116,11 @@ impl Stroke {
     }
 
     /// End the stroke: deposit the load's ledger evenly under the last dab (a
-    /// negative amount is taken back), limited by the 0..=255 range. Returns
-    /// what the ledger still holds after rounding and clamping.
+    /// negative amount is taken back), limited by the 0..=255 range; whatever
+    /// the footprint cannot take is deposited over the rest of the layer.
+    /// Returns what the ledger still holds, which is non-zero only when no
+    /// pixel of the layer had room left for it (canvas total plus the returned
+    /// value is then the total at the start of the stroke).
     pub fn finish(
         mut self,
         dab: &RoundDab,
@@ -141,6 +144,20 @@ impl Stroke {
                 };
                 let old = i64::from(pixels[at + channel]);
                 let new = (old + share + bonus).clamp(0, 255);
+                pixels[at + channel] = new as u8;
+                self.held[channel] -= new - old;
+            }
+        }
+        // What the last dab's footprint could not take (a saturated or empty
+        // range) goes to the rest of the layer, pixel by pixel in order, so
+        // paint is not dropped while any pixel has room for it.
+        for channel in 0..4 {
+            for at in (0..pixels.len()).step_by(4) {
+                if self.held[channel] == 0 {
+                    break;
+                }
+                let old = i64::from(pixels[at + channel]);
+                let new = (old + self.held[channel]).clamp(0, 255);
                 pixels[at + channel] = new as u8;
                 self.held[channel] -= new - old;
             }
