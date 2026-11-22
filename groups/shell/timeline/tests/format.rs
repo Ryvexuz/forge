@@ -67,6 +67,14 @@ fn format_rejects_bad_input() {
             FormatError::DuplicateTrack,
         ),
     ];
+    assert_eq!(
+        parse(
+            "timeline	1
+track	1
+foo"
+        ),
+        Err(FormatError::WrongColumnCount)
+    );
     for (input, error) in cases {
         assert_eq!(parse(input), Err(error), "{input:?}");
     }

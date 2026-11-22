@@ -73,9 +73,15 @@ pub fn parse(input: &str) -> Result<Timeline, FormatError> {
     if number::<u32>(version)? != 1 {
         return Err(FormatError::UnknownVersion);
     }
+    let timeline = records(lines)?;
+    // A missing final LF is reported only after every record read so far parsed.
     if !input.ends_with('\n') {
         return Err(FormatError::TruncatedRecord);
     }
+    Ok(timeline)
+}
+
+fn records<'a>(lines: impl Iterator<Item = &'a str>) -> Result<Timeline, FormatError> {
     let mut timeline = Timeline { tracks: Vec::new() };
     for line in lines {
         let cols: Vec<_> = line.split('\t').collect();
