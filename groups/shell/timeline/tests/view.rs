@@ -69,6 +69,9 @@ fn view_hit_test_round_trip() {
             );
             assert_eq!(view.hit_test(5, 5).unwrap(), Target::Ruler);
             assert_eq!(view.hit_test(0, 100).unwrap(), Target::Empty);
+            // Empty space inside track 0's row: past the right handle, on no clip or handle.
+            let beyond = right + 20;
+            assert_eq!(view.hit_test(beyond, 40).unwrap(), Target::Empty);
         }
     }
 }
