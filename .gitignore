@@ -1,1 +1,3 @@
 target/
+# each check creates a Cargo.lock; forge pins no versions yet (2026-11-22)
+Cargo.lock
