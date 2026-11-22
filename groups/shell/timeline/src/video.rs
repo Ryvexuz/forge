@@ -76,7 +76,7 @@ impl TrackDriver for VideoDriver {
         if output.len() < count {
             return Err(DriverError::BufferTooSmall);
         }
-        for (tick, pixels) in (range.start.0..range.end.0).zip(output[..count].chunks_exact_mut(8))
+        for (tick, pixels) in (range.start.0..range.end.0).zip(output[..count].as_chunks_mut::<8>().0)
         {
             let frame = self.frame_at(Time(tick))?;
             for (out, pixel) in pixels.iter_mut().zip(frame.pixels) {
