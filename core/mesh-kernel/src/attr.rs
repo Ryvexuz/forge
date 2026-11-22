@@ -142,7 +142,7 @@ fn triangles(mesh: &Mesh) -> Result<Vec<[usize; 3]>, AttrError> {
     Ok(result)
 }
 
-fn face_edges(a: Vec3, b: Vec3, c: Vec3) -> (Vec3, Vec3) {
+fn face_edges(a: Vec3, b: Vec3, c: Vec3) -> Result<(Vec3, Vec3), AttrError> {
     // First try differences directly to preserve small translated triangles.
     // If subtraction overflows, scale coordinates before subtracting instead.
     let mut u = b - a;
@@ -152,29 +152,31 @@ fn face_edges(a: Vec3, b: Vec3, c: Vec3) -> (Vec3, Vec3) {
             .iter()
             .flat_map(|p| [p.x.abs(), p.y.abs(), p.z.abs()])
             .fold(0.0_f64, f64::max);
+        // All-zero coordinates make a zero-size triangle, not a division by zero.
+        if scale == 0.0 {
+            return Err(AttrError::DegenerateFace);
+        }
         let scaled = |p: Vec3| Vec3::new(p.x / scale, p.y / scale, p.z / scale);
         u = scaled(b) - scaled(a);
         v = scaled(c) - scaled(a);
     }
-    (u, v)
+    Ok((u, v))
 }
 
 /// Unnormalised cross product of two edges: its direction is the face normal
 /// and its length is twice the face area (the area weight for vertex normals).
+/// A zero-area face has weight zero, so it is the zero vector here.
 fn face_area_normal(a: Vec3, b: Vec3, c: Vec3) -> Result<Vec3, AttrError> {
-    let (u, v) = face_edges(a, b, c);
+    let (u, v) = face_edges(a, b, c)?;
     let cross = u.cross(v);
     if !finite(cross) {
         return Err(AttrError::NonFinite);
-    }
-    if cross == Vec3::default() {
-        return Err(AttrError::DegenerateFace);
     }
     Ok(cross)
 }
 
 fn face_normal(a: Vec3, b: Vec3, c: Vec3) -> Result<Normal, AttrError> {
-    let (u, v) = face_edges(a, b, c);
+    let (u, v) = face_edges(a, b, c)?;
     // Unit edges bound the cross product independently of coordinate magnitude.
     let normal = u.normalized().cross(v.normalized()).normalized();
     if !finite(normal) {
@@ -197,8 +199,8 @@ pub fn compute_face_normals(mesh: &Mesh) -> Result<Vec<Normal>, AttrError> {
         .collect()
 }
 
-/// Sum area-weighted (unnormalised cross product) face normals, then normalize. Isolated vertices have zero normals;
-/// a nonempty fan whose sum is zero is reported rather than assigned a direction.
+/// Sum area-weighted (unnormalised cross product) face normals, then normalize. Zero-area faces add nothing.
+/// Isolated vertices have zero normals; a nonempty fan whose sum is zero is reported rather than assigned a direction.
 pub fn compute_vertex_normals(mesh: &Mesh) -> Result<Vec<Normal>, AttrError> {
     let faces = triangles(mesh)?;
     let mut sums = vec![Vec3::default(); mesh.vertices.len()];

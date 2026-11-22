@@ -234,3 +234,41 @@ fn vertex_normals_are_area_weighted() {
         }
     }
 }
+
+#[test]
+fn zero_area_face_does_not_fail_other_vertex_normals() {
+    // A strip of four +z triangles plus one collinear (zero-area) face [0, 2, 1] on its bottom edge.
+    let mesh = Mesh::from_triangles(
+        vec![
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::new(1.0, 0.0, 0.0),
+            Vec3::new(2.0, 0.0, 0.0),
+            Vec3::new(0.0, 1.0, 0.0),
+            Vec3::new(1.0, 1.0, 0.0),
+            Vec3::new(2.0, 1.0, 0.0),
+        ],
+        &[[0, 1, 4], [0, 4, 3], [1, 2, 5], [1, 5, 4], [0, 2, 1]],
+    )
+    .unwrap();
+    // The zero-area face alone is still a DegenerateFace for face normals.
+    assert_eq!(compute_face_normals(&mesh), Err(AttrError::DegenerateFace));
+    assert_eq!(
+        compute_vertex_normals(&mesh).unwrap(),
+        vec![Vec3::new(0.0, 0.0, 1.0); 6]
+    );
+}
+
+#[test]
+fn zero_size_triangle_is_degenerate_not_nonfinite() {
+    let mesh = Mesh::from_triangles(
+        vec![Vec3::default(), Vec3::default(), Vec3::default()],
+        &[[0, 1, 2]],
+    )
+    .unwrap();
+    // Its only vertices have a zero summed normal: reported, and never NonFinite or DegenerateFace.
+    assert_eq!(
+        compute_vertex_normals(&mesh),
+        Err(AttrError::CancelledNormal)
+    );
+    assert_eq!(compute_face_normals(&mesh), Err(AttrError::DegenerateFace));
+}
