@@ -142,7 +142,7 @@ fn triangles(mesh: &Mesh) -> Result<Vec<[usize; 3]>, AttrError> {
     Ok(result)
 }
 
-fn face_normal(a: Vec3, b: Vec3, c: Vec3) -> Result<Normal, AttrError> {
+fn face_edges(a: Vec3, b: Vec3, c: Vec3) -> (Vec3, Vec3) {
     // First try differences directly to preserve small translated triangles.
     // If subtraction overflows, scale coordinates before subtracting instead.
     let mut u = b - a;
@@ -156,6 +156,25 @@ fn face_normal(a: Vec3, b: Vec3, c: Vec3) -> Result<Normal, AttrError> {
         u = scaled(b) - scaled(a);
         v = scaled(c) - scaled(a);
     }
+    (u, v)
+}
+
+/// Unnormalised cross product of two edges: its direction is the face normal
+/// and its length is twice the face area (the area weight for vertex normals).
+fn face_area_normal(a: Vec3, b: Vec3, c: Vec3) -> Result<Vec3, AttrError> {
+    let (u, v) = face_edges(a, b, c);
+    let cross = u.cross(v);
+    if !finite(cross) {
+        return Err(AttrError::NonFinite);
+    }
+    if cross == Vec3::default() {
+        return Err(AttrError::DegenerateFace);
+    }
+    Ok(cross)
+}
+
+fn face_normal(a: Vec3, b: Vec3, c: Vec3) -> Result<Normal, AttrError> {
+    let (u, v) = face_edges(a, b, c);
     // Unit edges bound the cross product independently of coordinate magnitude.
     let normal = u.normalized().cross(v.normalized()).normalized();
     if !finite(normal) {
@@ -178,14 +197,14 @@ pub fn compute_face_normals(mesh: &Mesh) -> Result<Vec<Normal>, AttrError> {
         .collect()
 }
 
-/// Sum unit face normals, then normalize. Isolated vertices have zero normals;
+/// Sum area-weighted (unnormalised cross product) face normals, then normalize. Isolated vertices have zero normals;
 /// a nonempty fan whose sum is zero is reported rather than assigned a direction.
 pub fn compute_vertex_normals(mesh: &Mesh) -> Result<Vec<Normal>, AttrError> {
     let faces = triangles(mesh)?;
     let mut sums = vec![Vec3::default(); mesh.vertices.len()];
     let mut used = vec![false; mesh.vertices.len()];
     for [a, b, c] in faces {
-        let normal = face_normal(mesh.vertices[a], mesh.vertices[b], mesh.vertices[c])?;
+        let normal = face_area_normal(mesh.vertices[a], mesh.vertices[b], mesh.vertices[c])?;
         for i in [a, b, c] {
             sums[i] = sums[i] + normal;
             used[i] = true;

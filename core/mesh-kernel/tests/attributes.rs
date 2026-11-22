@@ -196,3 +196,41 @@ fn normal_edges_and_invalid_meshes() {
         Err(AttrError::CancelledNormal)
     );
 }
+
+#[test]
+fn vertex_normals_are_area_weighted() {
+    // An irregular tetrahedron: the three faces at vertex 0 have areas 1, 3 and 1.5.
+    let vertices = vec![
+        Vec3::new(0.0, 0.0, 0.0),
+        Vec3::new(2.0, 0.0, 0.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(0.0, 0.0, 3.0),
+    ];
+    let centroid = Vec3::new(0.5, 0.25, 0.75);
+    let mut faces = Vec::new();
+    for [a, b, c] in [[0, 1, 2], [0, 1, 3], [0, 2, 3], [1, 2, 3]] {
+        let outward = (vertices[b] - vertices[a])
+            .cross(vertices[c] - vertices[a])
+            .dot(vertices[a] - centroid);
+        faces.push(if outward > 0.0 { [a, b, c] } else { [a, c, b] });
+    }
+    let mesh = Mesh::from_triangles(vertices.clone(), &faces).unwrap();
+    let normals = compute_vertex_normals(&mesh).unwrap();
+    for (vertex, normal) in normals.iter().enumerate() {
+        let mut sum = [0.0_f64; 3];
+        for &[a, b, c] in faces.iter().filter(|f| f.contains(&vertex)) {
+            let n = (vertices[b] - vertices[a]).cross(vertices[c] - vertices[a]);
+            sum[0] += n.x;
+            sum[1] += n.y;
+            sum[2] += n.z;
+        }
+        let length = (sum[0] * sum[0] + sum[1] * sum[1] + sum[2] * sum[2]).sqrt();
+        for (actual, total) in [normal.x, normal.y, normal.z].into_iter().zip(sum) {
+            assert!(
+                (actual - total / length).abs() <= 1e-12,
+                "vertex {vertex}: actual={actual}, area-weighted={}",
+                total / length
+            );
+        }
+    }
+}
