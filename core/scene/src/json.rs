@@ -1,4 +1,4 @@
-//! Standard-library-only JSON reader. Object entries retain input order and duplicates.
+//! Standard-library-only JSON reader and writer. Object entries retain order and duplicates.
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Value {
@@ -290,4 +290,87 @@ pub fn read(text: &str) -> Result<Value, Error> {
             stack.push(frame);
         }
     }
+}
+
+/// Write compact JSON, preserving object entry order and duplicate keys.
+///
+/// Finite numbers use Rust's round-trippable f64 display representation.
+/// Non-finite numbers and containers deeper than `MAX_DEPTH` are errors;
+/// their offset is the byte position where the rejected value would start.
+/// No partial output is returned on failure.
+pub fn write(value: &Value) -> Result<String, Error> {
+    fn string(text: &str, out: &mut String) {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        out.push('"');
+        for ch in text.chars() {
+            match ch {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\u{8}' => out.push_str("\\b"),
+                '\u{c}' => out.push_str("\\f"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                '\u{0}'..='\u{1f}' => {
+                    let byte = ch as u8;
+                    out.push_str("\\u00");
+                    out.push(char::from(HEX[usize::from(byte >> 4)]));
+                    out.push(char::from(HEX[usize::from(byte & 15)]));
+                }
+                _ => out.push(ch),
+            }
+        }
+        out.push('"');
+    }
+
+    fn emit(value: &Value, depth: usize, out: &mut String) -> Result<(), Error> {
+        if matches!(value, Value::Array(_) | Value::Object(_)) && depth >= MAX_DEPTH {
+            return Err(Error {
+                kind: ErrorKind::TooDeep,
+                offset: out.len(),
+            });
+        }
+        match value {
+            Value::Null => out.push_str("null"),
+            Value::Bool(true) => out.push_str("true"),
+            Value::Bool(false) => out.push_str("false"),
+            Value::Number(number) => {
+                if !number.is_finite() {
+                    return Err(Error {
+                        kind: ErrorKind::NonFiniteNumber,
+                        offset: out.len(),
+                    });
+                }
+                out.push_str(&number.to_string());
+            }
+            Value::String(text) => string(text, out),
+            Value::Array(items) => {
+                out.push('[');
+                for (index, item) in items.iter().enumerate() {
+                    if index != 0 {
+                        out.push(',');
+                    }
+                    emit(item, depth + 1, out)?;
+                }
+                out.push(']');
+            }
+            Value::Object(items) => {
+                out.push('{');
+                for (index, (key, item)) in items.iter().enumerate() {
+                    if index != 0 {
+                        out.push(',');
+                    }
+                    string(key, out);
+                    out.push(':');
+                    emit(item, depth + 1, out)?;
+                }
+                out.push('}');
+            }
+        }
+        Ok(())
+    }
+
+    let mut output = String::new();
+    emit(value, 0, &mut output)?;
+    Ok(output)
 }
