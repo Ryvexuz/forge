@@ -238,10 +238,8 @@ fn check_uses(source: &str, external: &[&str]) -> Result<(), String> {
                 }
                 Some(Token::Word(root)) if !rooted => {
                     let root = root.strip_prefix("r#").unwrap_or(root);
-                    if !matches!(
-                        root,
-                        "std" | "core" | "alloc" | "crate" | "self" | "super"
-                    ) && !external.contains(&root)
+                    if !matches!(root, "std" | "core" | "alloc" | "crate" | "self" | "super")
+                        && !external.contains(&root)
                     {
                         return Err(format!("external use root is not allowed: {root}"));
                     }
