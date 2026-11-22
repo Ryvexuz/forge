@@ -1,0 +1,31 @@
+# CI for the forge workspace. No secrets, no deploy steps; the only third-party action is actions/checkout, pinned to a full commit SHA.
+# Same cargo steps as `broadsword check forge` (cargo build, cargo test), run here with plain cargo because CI has no broadsword binary.
+# forge has no third-party dependencies and commits no Cargo.lock, so there is nothing to fetch; --offline keeps it that way.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+      - name: Git identity (some tests make commits)
+        run: |
+          git config --global user.name "ci"
+          git config --global user.email "ci@example.invalid"
+      - name: Build
+        run: cargo build --offline --workspace
+      - name: Test
+        run: cargo test --offline --workspace
