@@ -1,4 +1,4 @@
-# studio: the workload workspace of ADR 0004 (docs/adr/0004-roadmap-repo-map.md in the Broadsword repo), accepted by Lazlo 2026-11-22 04:16Z.
+# forge: the workload workspace of ADR 0004 (docs/adr/0004-roadmap-repo-map.md in the Broadsword repo), accepted by Lazlo 2026-11-22 04:16Z.
 # Core crates live under core/, one folder of crates per mode under groups/. A group depends on core and never on another group.
 [workspace]
 resolver = "2"
