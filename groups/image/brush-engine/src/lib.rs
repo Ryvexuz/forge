@@ -5,6 +5,7 @@
 
 pub mod dab;
 pub mod lag;
+pub mod ppm;
 pub mod pressure;
 pub mod replay;
 pub mod smudge;
