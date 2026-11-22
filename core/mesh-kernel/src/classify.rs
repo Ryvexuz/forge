@@ -20,8 +20,9 @@ pub enum Side {
 /// Inputs must have valid triangle topology and finite coordinates (as produced
 /// by `Mesh::from_triangles`), and nondegenerate faces. `solid` must be closed.
 /// Faces must already be split at intersections: classification samples the
-/// rounded centroid, not the entire unsplit triangle. Boundary orientation is
-/// meaningful for coplanar faces, not for transverse contacts.
+/// rounded centroid, not the entire unsplit triangle. A face is on the boundary
+/// when its three vertices are exactly coplanar with a solid face containing
+/// the centroid. Boundary orientation is meaningful for coplanar faces, not for transverse contacts.
 pub fn classify_faces(mesh: &Mesh, solid: &Mesh) -> Vec<Side> {
     let targets = triangles(solid);
     triangles(mesh)
@@ -98,8 +99,17 @@ fn covers(t: Triangle, p: Point, axis: usize, sign: i8, perturb: bool) -> bool {
 fn classify(p: Point, face: Triangle, targets: &[Triangle]) -> Side {
     let mut odd = false;
     for &t in targets {
-        let plane = orient3d(t[0], t[1], t[2], p).expect("finite mesh coordinates");
-        if plane == 0 {
+        // Coplanar means all three face vertices lie exactly on the solid face's
+        // plane; the rounded sample point is only used for coverage and parity.
+        let coplanar = face
+            .iter()
+            .all(|&v| orient3d(t[0], t[1], t[2], v).expect("finite mesh coordinates") == 0);
+        let plane = if coplanar {
+            0
+        } else {
+            orient3d(t[0], t[1], t[2], p).expect("finite mesh coordinates")
+        };
+        if coplanar {
             for axis in 0..3 {
                 let sign = orientation(t, axis);
                 if sign != 0 && covers(t, p, axis, sign, false) {

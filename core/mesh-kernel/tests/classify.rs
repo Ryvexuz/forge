@@ -81,3 +81,28 @@ fn classify_contained_mesh_all_inside() {
         assert_eq!(classify_faces(&outer, &inner), vec![Side::Outside; 12]);
     }
 }
+
+#[test]
+fn classify_tilted_cube_against_itself_is_on_boundary_same() {
+    // An irrational-looking rotation: faces are no longer axis aligned, so the
+    // rounded centroid of a face is generally not exactly on its plane.
+    let (sx, cx) = 0.7_f64.sin_cos();
+    let (sy, cy) = 0.4_f64.sin_cos();
+    let (sz, cz) = 1.1_f64.sin_cos();
+    let solid = cube(1.0);
+    let (vertices, triangles) = solid.to_triangles();
+    let rotated = vertices
+        .iter()
+        .map(|v| {
+            let (y, z) = (v.y * cx - v.z * sx, v.y * sx + v.z * cx);
+            let (x, z) = (v.x * cy + z * sy, -v.x * sy + z * cy);
+            let (x, y) = (x * cz - y * sz, x * sz + y * cz);
+            Vec3::new(x * 1.37, y * 0.91, z * 1.13)
+        })
+        .collect();
+    let tilted = Mesh::from_triangles(rotated, &triangles).unwrap();
+    assert_eq!(
+        classify_faces(&tilted, &tilted),
+        vec![Side::OnBoundarySame; 12]
+    );
+}
