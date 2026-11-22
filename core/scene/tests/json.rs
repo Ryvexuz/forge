@@ -90,3 +90,16 @@ fn finite_extremes_and_large_input() {
     };
     assert_eq!(items.len(), 10001);
 }
+
+#[test]
+fn deep_nesting_is_an_error_not_a_crash() {
+    let text = format!("{}{}", "[".repeat(100_000), "]".repeat(100_000));
+    let err = read(&text).unwrap_err();
+    assert_eq!(err.kind, ErrorKind::TooDeep);
+    assert_eq!(err.offset, scene::json::MAX_DEPTH);
+    let object_text = format!("{}1{}", "{\"a\":".repeat(100_000), "}".repeat(100_000));
+    assert_eq!(read(&object_text).unwrap_err().kind, ErrorKind::TooDeep);
+    let limit = scene::json::MAX_DEPTH;
+    let ok = format!("{}{}", "[".repeat(limit), "]".repeat(limit));
+    assert!(read(&ok).is_ok());
+}

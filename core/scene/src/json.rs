@@ -10,6 +10,9 @@ pub enum Value {
     Object(Vec<(String, Value)>),
 }
 
+/// Deepest container nesting `read` accepts; one more level returns `ErrorKind::TooDeep`.
+pub const MAX_DEPTH: usize = 128;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ErrorKind {
     UnexpectedEnd,
@@ -20,6 +23,8 @@ pub enum ErrorKind {
     InvalidNumber,
     NonFiniteNumber,
     TrailingCharacters,
+    /// Containers nested deeper than `MAX_DEPTH`; refused so dropping the result cannot overflow the stack.
+    TooDeep,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -205,6 +210,9 @@ pub fn read(text: &str) -> Result<Value, Error> {
             ready = match r.peek() {
                 Some(b'[' | b'{') => {
                     let object = r.peek() == Some(b'{');
+                    if stack.len() >= MAX_DEPTH {
+                        return Err(r.error(ErrorKind::TooDeep));
+                    }
                     r.pos += 1;
                     r.whitespace();
                     if object {
