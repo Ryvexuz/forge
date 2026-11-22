@@ -7,20 +7,20 @@ data types are implemented.
 
 ## Module layering
 
-The intended responsibilities are:
+Per `docs/nodes/2.2.md`, section 2 ("Fit with the product intent"), the brush
+has three layers:
 
-- Input processing: `pressure` maps pressure response and `stabilizer` smooths
-  stroke input.
-- Brush processing: `dab` generates brush marks; `smudge` handles sampling and
-  paint mixing.
-- Output: `tiles` is the boundary for tile-oriented brush output.
-- Cross-cutting support: `replay` records and replays strokes; `lag` measures
-  input-to-output latency.
+1. Data: `Dab`, `Stroke`, `BrushSettings` and the file formats; portable and
+   std only.
+2. Maths: pure functions from pen samples to dabs and from dabs to pixels, with
+   no window and no clock.
+3. I/O: the event-log reader and the tile file reader.
 
-These are module boundaries, not implemented calls or dependency edges.
-The source plan `docs/nodes/2.2.md`, section 2, is not present in this worktree;
-the grouping above must be checked against it before treating it as the plan's
-authoritative layering.
+Layers 1 and 2 are testable with no window, so a mode can call them without
+Win32. Modes receive samples from the shell; the brush never opens a window
+itself. The planned modules are `dab`, `pressure`, `stabilizer`, `smudge`,
+`replay`, `tiles` and `lag`; the plan does not assign each module to a layer,
+and this skeleton does not either.
 
 ## Build and test
 
