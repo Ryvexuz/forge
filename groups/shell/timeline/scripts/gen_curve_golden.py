@@ -2,7 +2,8 @@
 python -I groups/shell/timeline/scripts/gen_curve_golden.py
 
 Independent exact integer Bernstein/Hermite polynomials, not Rust evaluation.
-Bezier x handles are 1/3 and 2/3, making x(t)=t exactly.
+Bezier x handles are 1/3 and 2/3, making x(t)=t exactly. Bezier y handles
+are CSS cubic-bezier progress: control value = a + y*(b-a), y1=3, y2=-1.
 Output has 1001 samples for each mode and each endpoint pair.
 """
 
@@ -22,8 +23,11 @@ def rows():
                 elif mode == "linear":
                     n = (a * u + b * i) * scale**2
                 elif mode == "bezier":
-                    n = a * u**3 + 3 * (a + 3) * u**2 * i
-                    n += 3 * (b - 1) * u * i**2 + b * i**3
+                    # CSS form: handle y is progress between the two keys.
+                    c1 = a + 3 * (b - a)
+                    c2 = a - 1 * (b - a)
+                    n = a * u**3 + 3 * c1 * u**2 * i
+                    n += 3 * c2 * u * i**2 + b * i**3
                 else:
                     n = a * (2 * i**3 - 3 * scale * i**2 + denominator)
                     n += b * (-2 * i**3 + 3 * scale * i**2)
@@ -37,4 +41,5 @@ def rows():
 if __name__ == "__main__":
     output = Path(__file__).resolve().parent.parent / "tests/fixtures/curve_golden.csv"
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(rows()) + "\n", encoding="ascii")
+    text = "\n".join(rows()) + "\n"
+    output.write_bytes(text.encode("ascii"))

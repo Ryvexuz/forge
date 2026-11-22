@@ -1,7 +1,8 @@
 //! Scalar curves sampled at an `f64` position in ticks, clamped at the endpoints.
 //!
-//! The left key selects interpolation. Bezier handles are relative control
-//! points. Hermite handles describe tangent vectors: outgoing on the left,
+//! The left key selects interpolation. Bezier handle x values are time offsets
+//! from their key; handle y values follow CSS `cubic-bezier`: normalized
+//! progress between the two key values (control value = a + y*(b-a)). Hermite handles describe tangent vectors: outgoing on the left,
 //! incoming on the right; their value/time slopes are multiplied by the segment
 //! duration, as in glTF CUBICSPLINE. Missing cubic handles are errors.
 
@@ -70,8 +71,10 @@ impl Curve {
                         {
                             return Err(CurveError::InvalidHandle);
                         }
-                        if !(a.value + outgoing.1).is_finite()
-                            || !(b.value + incoming.1).is_finite()
+                        let span = b.value - a.value;
+                        if !span.is_finite()
+                            || !(a.value + outgoing.1 * span).is_finite()
+                            || !(a.value + incoming.1 * span).is_finite()
                         {
                             return Err(CurveError::NumericRange);
                         }
@@ -129,10 +132,11 @@ impl Curve {
                         high = mid;
                     }
                 }
+                let span = b.value - a.value;
                 cubic(
                     a.value,
-                    a.value + outgoing.1,
-                    b.value + incoming.1,
+                    a.value + outgoing.1 * span,
+                    a.value + incoming.1 * span,
                     b.value,
                     low + (high - low) * 0.5,
                 )

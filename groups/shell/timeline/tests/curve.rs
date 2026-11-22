@@ -103,7 +103,7 @@ fn curve_rejects_bad_input() {
 fn curve_solves_nonlinear_bezier_x() {
     let mut input = keys(0.0, 1.0, Interp::Bezier);
     input[0].handles = Some([(0.0, 0.0), (0.0, 1.0 / 3.0)]);
-    input[1].handles = Some([(-1200.0, -1.0 / 3.0), (0.0, 0.0)]);
+    input[1].handles = Some([(-1200.0, 2.0 / 3.0), (0.0, 0.0)]);
     let curve = Curve::new(input).unwrap();
     // x(t)=t^3, y(t)=t, so x=1/8 must produce y=1/2.
     assert!((curve.evaluate(-450.0).unwrap() - 0.5).abs() <= 1e-9);
