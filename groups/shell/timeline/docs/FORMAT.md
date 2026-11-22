@@ -36,7 +36,7 @@ without pretending that a production v2 schema exists.
 - MissingHeader: absent or unrecognized first record.
 - UnknownVersion: unsupported numeric header or migration version.
 - WrongColumnCount: record has the wrong number of tab-separated columns.
-- InvalidNumber: malformed or overflowing integer/float, or negative length.
+- InvalidNumber: malformed integer or float, an overflowing integer, or negative length. A float that overflows to infinity (such as 1e999) parses and is NonFinite instead.
 - NonFinite: a parsed scalar is NaN or infinite.
 - InvalidText: empty/control-bearing text or unknown interpolation.
 - InvalidPath: a path contains a backslash or colon.
