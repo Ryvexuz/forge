@@ -85,6 +85,22 @@ struct Drag {
     delta: Time,
 }
 
+/// Unclipped clip edges in i64 pixels relative to the scroll offset.
+#[derive(Clone, Copy, Debug)]
+struct Span {
+    left: i64,
+    right: i64,
+    y: i32,
+}
+
+fn row_y(track: usize) -> Result<i32, ViewError> {
+    i32::try_from(track)
+        .ok()
+        .and_then(|t| t.checked_mul(TRACK_HEIGHT))
+        .and_then(|t| t.checked_add(RULER_HEIGHT))
+        .ok_or(ViewError::Overflow)
+}
+
 pub struct TimelineView {
     pub timeline: Timeline,
     pub playhead: Time,
@@ -121,14 +137,21 @@ impl TimelineView {
         })
     }
 
+    pub fn zoom(&self) -> u64 {
+        self.zoom
+    }
+
+    pub fn scroll(&self) -> Time {
+        self.scroll
+    }
+
+    pub fn size(&self) -> (i32, i32) {
+        self.size
+    }
+
     /// Conversion truncates toward zero; intermediate products are checked.
     pub fn time_to_pixel(&self, time: Time) -> Result<i32, ViewError> {
-        let ticks = i128::from(time.0) - i128::from(self.scroll.0);
-        let pixels = ticks
-            .checked_mul(i128::from(self.zoom))
-            .ok_or(ViewError::Overflow)?
-            / i128::from(TICKS_PER_SECOND);
-        i32::try_from(pixels).map_err(|_| ViewError::Overflow)
+        i32::try_from(self.time_to_px64(time)?).map_err(|_| ViewError::Overflow)
     }
 
     pub fn pixel_to_time(&self, x: i32) -> Result<Time, ViewError> {
@@ -139,26 +162,37 @@ impl TimelineView {
             .map_err(|_| ViewError::Overflow)
     }
 
-    /// Like `time_to_pixel`, but a position outside the `i32` range saturates (it is off screen).
-    fn time_to_pixel_clamped(&self, time: Time) -> i32 {
-        match self.time_to_pixel(time) {
-            Ok(px) => px,
-            Err(_) if time.0 < self.scroll.0 => i32::MIN,
-            Err(_) => i32::MAX,
-        }
+    /// The layout pixel space: i64 pixels relative to the scroll offset, never clipped.
+    /// Overflow only when the pixel does not fit an i64.
+    fn time_to_px64(&self, time: Time) -> Result<i64, ViewError> {
+        let ticks = i128::from(time.0) - i128::from(self.scroll.0);
+        let pixels = ticks
+            .checked_mul(i128::from(self.zoom))
+            .ok_or(ViewError::Overflow)?
+            / i128::from(TICKS_PER_SECOND);
+        i64::try_from(pixels).map_err(|_| ViewError::Overflow)
     }
 
     pub fn layout(&self, track: usize, clip: usize) -> Result<Option<Rect>, ViewError> {
-        self.layout_with(track, clip, false)
+        let Some(span) = self.span(track, clip)? else {
+            return Ok(None);
+        };
+        let x = i32::try_from(span.left).map_err(|_| ViewError::Overflow)?;
+        let width = span
+            .right
+            .checked_sub(span.left)
+            .and_then(|w| i32::try_from(w).ok())
+            .ok_or(ViewError::Overflow)?;
+        Ok(Some(Rect {
+            x,
+            y: span.y,
+            width,
+            height: TRACK_HEIGHT,
+        }))
     }
 
-    /// With `clamp`, pixel positions outside the `i32` range saturate instead of failing.
-    fn layout_with(
-        &self,
-        track: usize,
-        clip: usize,
-        clamp: bool,
-    ) -> Result<Option<Rect>, ViewError> {
+    /// A clip's unclipped edges in the i64 layout space.
+    fn span(&self, track: usize, clip: usize) -> Result<Option<Span>, ViewError> {
         let Some(item) = self
             .timeline
             .tracks
@@ -173,31 +207,10 @@ impl TimelineView {
             .map_or(0, |d| d.delta.0);
         let start = item.start.0.checked_add(delta).ok_or(ViewError::Overflow)?;
         let end = start.checked_add(item.len.0).ok_or(ViewError::Overflow)?;
-        let (x, right) = if clamp {
-            (
-                self.time_to_pixel_clamped(Time(start)),
-                self.time_to_pixel_clamped(Time(end)),
-            )
-        } else {
-            (
-                self.time_to_pixel(Time(start))?,
-                self.time_to_pixel(Time(end))?,
-            )
-        };
-        let y = i32::try_from(track)
-            .ok()
-            .and_then(|t| t.checked_mul(TRACK_HEIGHT))
-            .and_then(|t| t.checked_add(RULER_HEIGHT))
-            .ok_or(ViewError::Overflow)?;
-        Ok(Some(Rect {
-            x,
-            y,
-            width: if clamp {
-                right.saturating_sub(x)
-            } else {
-                right.checked_sub(x).ok_or(ViewError::Overflow)?
-            },
-            height: TRACK_HEIGHT,
+        Ok(Some(Span {
+            left: self.time_to_px64(Time(start))?,
+            right: self.time_to_px64(Time(end))?,
+            y: row_y(track)?,
         }))
     }
 
@@ -212,13 +225,11 @@ impl TimelineView {
         let Some(row) = self.timeline.tracks.get(track) else {
             return Ok(Target::Empty);
         };
+        let x = i64::from(x);
+        let near = |edge: i64| x.abs_diff(edge) <= HANDLE as u64;
         for (channel, data) in row.channels.iter().enumerate() {
             for (key, data) in data.keys.iter().enumerate() {
-                // A key whose pixel does not fit an i32 is off screen and cannot be hit.
-                let Ok(px) = self.time_to_pixel(data.time) else {
-                    continue;
-                };
-                if (i64::from(x) - i64::from(px)).abs() <= i64::from(HANDLE) {
+                if near(self.time_to_px64(data.time)?) {
                     return Ok(Target::Key {
                         track,
                         channel,
@@ -228,15 +239,14 @@ impl TimelineView {
             }
         }
         for clip in 0..row.clips.len() {
-            if let Some(rect) = self.layout_with(track, clip, true)? {
-                let right = i64::from(rect.x) + i64::from(rect.width);
-                if (i64::from(x) - i64::from(rect.x)).abs() <= i64::from(HANDLE) {
+            if let Some(span) = self.span(track, clip)? {
+                if near(span.left) {
                     return Ok(Target::LeftHandle { track, clip });
                 }
-                if (i64::from(x) - right).abs() <= i64::from(HANDLE) {
+                if near(span.right) {
                     return Ok(Target::RightHandle { track, clip });
                 }
-                if i64::from(x) > i64::from(rect.x) && i64::from(x) < right {
+                if x > span.left && x < span.right {
                     return Ok(Target::Clip { track, clip });
                 }
             }
@@ -290,10 +300,13 @@ impl TimelineView {
                 self.drag = next;
                 if matches!(input, ViewInput::PointerUp { .. }) {
                     self.scrubbing = false;
-                    return Ok(self.drag.take().map(|d| Edit::MoveClip {
-                        track: d.track,
-                        clip: d.clip,
-                        delta: d.delta,
+                    // A click with no movement is a selection, not a drag: no edit.
+                    return Ok(self.drag.take().filter(|d| d.delta.0 != 0).map(|d| {
+                        Edit::MoveClip {
+                            track: d.track,
+                            clip: d.clip,
+                            delta: d.delta,
+                        }
                     }));
                 }
             }
@@ -306,24 +319,28 @@ impl TimelineView {
         let mut out = format!("rect 0 0 {} {} background\n", self.size.0, self.size.1);
         out.push_str(&format!("rect 0 0 {} {RULER_HEIGHT} ruler\n", self.size.0));
         for (track, row) in self.timeline.tracks.iter().enumerate() {
-            let y = i32::try_from(track)
-                .ok()
-                .and_then(|t| t.checked_mul(TRACK_HEIGHT))
-                .and_then(|t| t.checked_add(RULER_HEIGHT))
-                .ok_or(ViewError::Overflow)?;
+            let y = row_y(track)?;
             out.push_str(&format!("text 0 {y} label {:?}\n", row.name));
             for (clip, item) in row.clips.iter().enumerate() {
-                if let Some(r) = self.layout_with(track, clip, true)? {
-                    out.push_str(&format!(
-                        "rect {} {} {} {} clip\n",
-                        r.x, r.y, r.width, r.height
-                    ));
-                    out.push_str(&format!("text {} {} label {:?}\n", r.x, r.y, item.name));
+                let Some(span) = self.span(track, clip)? else {
+                    continue;
+                };
+                // Clip to the viewport only here, at emit time: the visible part, or nothing.
+                let left = span.left.max(0);
+                let right = span.right.min(i64::from(self.size.0));
+                if right <= left {
+                    continue; // entirely off screen
                 }
+                let (x, width) = (to_screen(left)?, to_screen(right - left)?);
+                out.push_str(&format!(
+                    "rect {x} {} {width} {TRACK_HEIGHT} clip\n",
+                    span.y
+                ));
+                out.push_str(&format!("text {x} {} label {:?}\n", span.y, item.name));
             }
             for channel in &row.channels {
                 for key in &channel.keys {
-                    let Ok(x) = self.time_to_pixel(key.time) else {
+                    let Some(x) = self.visible_x(key.time)? else {
                         continue; // off screen
                     };
                     out.push_str(&format!(
@@ -333,8 +350,24 @@ impl TimelineView {
                 }
             }
         }
-        let x = self.time_to_pixel_clamped(self.playhead);
-        out.push_str(&format!("line {x} 0 {x} {} playhead\n", self.size.1));
+        if let Some(x) = self.visible_x(self.playhead)? {
+            out.push_str(&format!("line {x} 0 {x} {} playhead\n", self.size.1));
+        }
         Ok(out)
     }
+
+    /// The screen x of a time when it lies in the viewport [0, width], else None.
+    fn visible_x(&self, time: Time) -> Result<Option<i32>, ViewError> {
+        let x = self.time_to_px64(time)?;
+        if (0..=i64::from(self.size.0)).contains(&x) {
+            to_screen(x).map(Some)
+        } else {
+            Ok(None)
+        }
+    }
+}
+
+/// A value already clipped to the viewport always fits an i32.
+fn to_screen(v: i64) -> Result<i32, ViewError> {
+    i32::try_from(v).map_err(|_| ViewError::Overflow)
 }

@@ -2,8 +2,8 @@ state start
 rect 0 0 320 180 background
 rect 0 0 320 24 ruler
 text 0 24 label "Music"
-rect -10 24 100 48 clip
-text -10 24 label "Intro"
+rect 0 24 90 48 clip
+text 0 24 label "Intro"
 text 0 72 label "Picture"
 rect 0 72 200 48 clip
 text 0 72 label "Shot"
@@ -17,8 +17,8 @@ state middle
 rect 0 0 320 180 background
 rect 0 0 320 24 ruler
 text 0 24 label "Music"
-rect -10 24 100 48 clip
-text -10 24 label "Intro"
+rect 0 24 90 48 clip
+text 0 24 label "Intro"
 text 0 72 label "Picture"
 rect 0 72 200 48 clip
 text 0 72 label "Shot"

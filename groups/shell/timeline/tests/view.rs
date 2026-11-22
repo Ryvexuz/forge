@@ -195,3 +195,74 @@ fn view_offscreen_items_do_not_fail_hit_test_or_draw_list() {
     );
     assert!(view.draw_list().unwrap().contains("\"far\""));
 }
+
+#[test]
+fn view_long_clip_starting_offscreen_left_hits_and_draws_visible_part() {
+    // A 10-hour timeline at 96,000 px/s; clip 0 lasts 7 hours (> 6.2 h), so its left
+    // edge is about -2.4e9 px when scrolled near its end: outside the i32 range.
+    let hour = 3_600 * TICKS_PER_SECOND;
+    let clip = |start: i64, len: i64, name: &str| Clip {
+        start: Time(start),
+        len: Time(len),
+        source: "test.wav".into(),
+        source_offset: Time(0),
+        name: name.into(),
+    };
+    let timeline = Timeline {
+        tracks: vec![Track {
+            id: 1,
+            kind: "audio".into(),
+            name: "test".into(),
+            clips: vec![
+                clip(0, 7 * hour, "long"),
+                clip(
+                    10 * hour - 20 * TICKS_PER_SECOND,
+                    20 * TICKS_PER_SECOND,
+                    "end",
+                ),
+            ],
+            channels: vec![],
+        }],
+    };
+    // Scroll to 10 s before the long clip's end: its right edge is at 960,000 px.
+    let scroll = Time(7 * hour - 10 * TICKS_PER_SECOND);
+    let view = TimelineView::new(timeline, 96_000, scroll, (4_000_000, 200)).unwrap();
+    assert_eq!(
+        view.hit_test(480_000, 40).unwrap(),
+        Target::Clip { track: 0, clip: 0 }
+    );
+    assert_eq!(
+        view.hit_test(960_000, 40).unwrap(),
+        Target::RightHandle { track: 0, clip: 0 }
+    );
+    assert_eq!(view.hit_test(960_010, 40).unwrap(), Target::Empty);
+    let list = view.draw_list().unwrap();
+    // The visible part: from the viewport's left edge to the clip's right edge.
+    assert!(
+        list.contains("rect 0 24 960000 48 clip\ntext 0 24 label \"long\"\n"),
+        "{list}"
+    );
+    // The end clip is about 1.0e9 px to the right, past the viewport: not drawn.
+    assert!(!list.contains("\"end\""), "{list}");
+    // The public i32 contract is unchanged: the long clip's left edge is outside i32.
+    assert_eq!(view.layout(0, 0), Err(ViewError::Overflow));
+}
+
+#[test]
+fn view_click_without_move_yields_no_edit() {
+    let timeline = parse(include_str!("fixtures/timeline_v1.tl")).unwrap();
+    let mut view =
+        TimelineView::new(timeline, TICKS_PER_SECOND as u64, Time(0), (320, 180)).unwrap();
+    assert_eq!(view.input(pointer(30, false)).unwrap(), None);
+    assert_eq!(view.selection, Target::Clip { track: 0, clip: 0 });
+    // Released where it was pressed: a selection click, not a drag.
+    assert_eq!(view.input(pointer(30, true)).unwrap(), None);
+}
+
+#[test]
+fn view_reads_zoom_scroll_and_size() {
+    let view = TimelineView::new(empty_timeline(), 96_000, Time(7), (640, 200)).unwrap();
+    assert_eq!(view.zoom(), 96_000);
+    assert_eq!(view.scroll(), Time(7));
+    assert_eq!(view.size(), (640, 200));
+}
