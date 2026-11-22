@@ -190,3 +190,49 @@ fn curve_clamps_at_the_alpha_boundary_and_tiles_refuse_channels_above_alpha() {
         }
     }
 }
+
+#[test]
+fn outputs_never_exceed_alpha_for_alpha_just_below_one() {
+    // Full-intensity channels at alphas whose f32 neighbours sit at the rounding edge.
+    let alphas = [
+        f32::from_bits(1.0f32.to_bits() - 1),
+        f32::from_bits(1.0f32.to_bits() - 2),
+        f32::from_bits(0.5f32.to_bits() - 1),
+        f32::from_bits(0.75f32.to_bits() + 1),
+        0.999_999_9,
+        f32::MIN_POSITIVE,
+    ];
+    let table = Box::new([1.0f32; 256]);
+    for alpha in alphas {
+        let mut pixels = vec![[0.0; 4]; TILE_PIXEL_COUNT];
+        pixels[0] = [alpha, alpha, alpha, alpha];
+        pixels[1] = [alpha, alpha * 0.5, alpha * 0.25, alpha];
+        let source = Tile::from_pixels(pixels).unwrap();
+        for adjustment in [
+            Adjustment::BrightnessContrast {
+                brightness: f32::MAX,
+                contrast: 1.0,
+            },
+            Adjustment::BrightnessContrast {
+                brightness: 0.5,
+                contrast: 4.0,
+            },
+            Adjustment::Curve {
+                table: table.clone(),
+            },
+            Adjustment::HueSaturation {
+                hue: 137.0,
+                saturation: 3.0,
+            },
+        ] {
+            let output = adjustment
+                .apply(&source)
+                .expect("valid input tile stays valid");
+            for pixel in output.pixels() {
+                for channel in 0..3 {
+                    assert!(pixel[channel] <= pixel[3], "alpha {alpha}: {pixel:?}");
+                }
+            }
+        }
+    }
+}

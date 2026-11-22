@@ -97,10 +97,12 @@ impl Adjustment {
                         rotate_hsv(rgb, f64::from(*hue), f64::from(*saturation))
                     }
                 };
+                // The f64 -> f32 cast can round a channel one step above alpha;
+                // Tile refuses channels above alpha, so cap each at alpha.
                 [
-                    (adjusted[0] * alpha) as f32,
-                    (adjusted[1] * alpha) as f32,
-                    (adjusted[2] * alpha) as f32,
+                    ((adjusted[0] * alpha) as f32).min(pixel[3]),
+                    ((adjusted[1] * alpha) as f32).min(pixel[3]),
+                    ((adjusted[2] * alpha) as f32).min(pixel[3]),
                     pixel[3],
                 ]
             })
