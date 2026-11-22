@@ -168,3 +168,70 @@ fn quaternion_and_trs_edges() {
     )
     .is_none());
 }
+
+#[test]
+fn quaternion_matrix_matches_independent_rodrigues_reference() {
+    // Reference matrices from the Rodrigues formula in Python (f64), not from the quaternion formula under test.
+    // 90 degrees about the axis (1, 2, 3) and 30 degrees about z.
+    let cases: [([f32; 4], [[f64; 3]; 3]); 2] = [
+        (
+            [
+                0.188_982_24,
+                0.377_964_47,
+                0.566_946_7,
+                std::f32::consts::FRAC_1_SQRT_2,
+            ],
+            [
+                [0.07142857142857148, -0.6589265828801303, 0.7488081981105631],
+                [0.9446408685944161, 0.28571428571428575, 0.16131018665900415],
+                [-0.3202367695391345, 0.6958326704838529, 0.6428571428571429],
+            ],
+        ),
+        (
+            [0.0, 0.0, 0.258_819_05, 0.965_925_8],
+            [
+                [0.8660254037844387, -0.49999999999999994, 0.0],
+                [0.49999999999999994, 0.8660254037844387, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+        ),
+    ];
+    let mut matrices = Vec::new();
+    for (q, reference) in cases {
+        let rotation = Quat::new(q[0], q[1], q[2], q[3]).unwrap();
+        let matrix = Mat4::from_trs(Vec3::default(), rotation, Vec3::new(1.0, 1.0, 1.0)).unwrap();
+        for (r, row) in reference.iter().enumerate() {
+            for (c, expected) in row.iter().enumerate() {
+                let error = (f64::from(matrix.m[r][c]) - expected).abs();
+                // The matrix and quaternion are stored as f32, so 1e-12 is unreachable; 1e-6 is about 10 f32 ulps
+                // and far below the error of any wrong sign or term (at least 0.1 for these rotations).
+                assert!(
+                    error <= 1.0e-6,
+                    "[{r}][{c}]: {} vs {expected}",
+                    matrix.m[r][c]
+                );
+            }
+        }
+        matrices.push(matrix);
+    }
+    // A parent turned 90 degrees about (1, 2, 3) with a child turned 30 degrees about z composes as parent * child.
+    let mut hierarchy = Hierarchy::default();
+    for (index, (q, _)) in cases.iter().enumerate() {
+        hierarchy.nodes.push(Node {
+            parent: if index == 1 { Some(0) } else { None },
+            mesh: None,
+            transform: Transform {
+                translation: Vec3::default(),
+                rotation: Quat::new(q[0], q[1], q[2], q[3]).unwrap(),
+                scale: Vec3::new(1.0, 1.0, 1.0),
+            },
+        });
+    }
+    let world = hierarchy.world_matrices().unwrap();
+    let product = matrices[0].mul(&matrices[1]);
+    for r in 0..4 {
+        for c in 0..4 {
+            assert!((world[1].m[r][c] - product.m[r][c]).abs() <= 1.0e-6);
+        }
+    }
+}
