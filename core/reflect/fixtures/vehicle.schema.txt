@@ -1,0 +1,14 @@
+reflect schema 1
+type Vehicle version=2 fields=6
+field name kind=text since=1 label="Name"
+field mass_kg kind=f64 since=1 label="Mass" unit="kg" min=0x407f400000000000 max=0x40b3880000000000 renamed_from=mass
+field position kind=array<f64;3> since=1 label="Position" unit="m"
+field wheels kind=list<struct<Wheel>> since=1 label="Wheels"
+field note kind=option<text> since=1 label="Note"
+field drive kind=enum<DriveMode:Front|Rear|All> since=2 label="Drive" default=Rear
+end
+type Wheel version=1 fields=3
+field radius_m kind=f64 since=1 label="Radius" unit="m" min=0x3fb999999999999a max=0x3ff8000000000000
+field width_m kind=f64 since=1 label="Width" unit="m" min=0x3fa999999999999a max=0x3fe3333333333333
+field steered kind=bool since=1 label="Steered"
+end

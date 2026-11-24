@@ -1,0 +1,10 @@
+widget path=name kind=text label="Name"
+widget path=mass_kg kind=f64 label="Mass" unit="kg" min=500 max=5000
+widget path=position kind=array label="Position" unit="m" of=f64 len=3
+widget path=position[0] kind=f64 label="Position item" unit="m"
+widget path=wheels kind=list label="Wheels" of=struct
+widget path=wheels[0].radius_m kind=f64 label="Radius" unit="m" min=0.1 max=1.5
+widget path=wheels[0].width_m kind=f64 label="Width" unit="m" min=0.05 max=0.6
+widget path=wheels[0].steered kind=bool label="Steered"
+widget path=note kind=option label="Note" of=text
+widget path=drive kind=enum label="Drive" variants=Front|Rear|All
