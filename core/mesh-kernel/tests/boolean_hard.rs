@@ -1,7 +1,7 @@
 //! M12a hard pairs use quarter-grid boxes and exactly representable cuts,
 //! so touching, offset-touching, partly coplanar and contained-touching need
-//! no rounding. The rotated pair and `boolean_hard_pairs_watertight_signed_volume`
-//! (m16) wait for M11b and M12b.
+//! no rounding. The 30-degree rotated pair uses rounded cut points; all five
+//! pairs are covered by `boolean_hard_pairs_watertight_signed_volume` (m16).
 //! If a pair fails, stop and report the error or numbers; do not change source
 //! code or weaken expectations to make it pass.
 
@@ -110,6 +110,7 @@ fn checked_result(
     result: Result<Mesh, BooleanError>,
     label: &str,
     volume: f64,
+    component_count: usize,
     euler: Option<i128>,
 ) -> Mesh {
     let mesh = result.unwrap_or_else(|error| panic!("{label}: {error}"));
@@ -121,7 +122,7 @@ fn checked_result(
             signed_volume(&mesh)
         )
     });
-    assert_eq!(components(&mesh), 1, "{label}: components");
+    assert_eq!(components(&mesh), component_count, "{label}: components");
     if let Some(expected) = euler {
         assert_eq!(mesh.euler_characteristic(), expected, "{label}: Euler");
     }
@@ -135,12 +136,16 @@ fn checked_empty(result: Result<Mesh, BooleanError>, label: &str) {
 
 #[test]
 fn boolean_hard_touching_pair() {
+    touching_pair();
+}
+
+fn touching_pair() {
     let a = grid_box(4, 1.0, [0.0; 3]);
     let b = grid_box(4, 1.0, [1.0, 0.0, 0.0]);
-    let merged = checked_result(union(&a, &b), "touching: union(A, B)", 2.0, Some(2));
+    let merged = checked_result(union(&a, &b), "touching: union(A, B)", 2.0, 1, Some(2));
     assert_eq!(merged.faces.len(), 320, "touching: union(A, B): triangles");
     checked_empty(intersection(&a, &b), "touching: intersection(A, B)");
-    let remainder = checked_result(difference(&a, &b), "touching: difference(A, B)", 1.0, None);
+    let remainder = checked_result(difference(&a, &b), "touching: difference(A, B)", 1.0, 1, None);
     assert_eq!(
         remainder.faces.len(),
         192,
@@ -150,20 +155,29 @@ fn boolean_hard_touching_pair() {
 
 #[test]
 fn boolean_hard_touching_offset_pair() {
+    touching_offset_pair();
+}
+
+fn touching_offset_pair() {
     let a = grid_box(4, 1.0, [0.0; 3]);
     let b = grid_box(4, 1.0, [1.0, 0.25, 0.25]);
-    checked_result(union(&a, &b), "touching-offset: union(A, B)", 2.0, Some(2));
+    checked_result(union(&a, &b), "touching-offset: union(A, B)", 2.0, 1, Some(2));
     checked_empty(intersection(&a, &b), "touching-offset: intersection(A, B)");
     checked_result(
         difference(&a, &b),
         "touching-offset: difference(A, B)",
         1.0,
+        1,
         None,
     );
 }
 
 #[test]
 fn boolean_hard_partly_coplanar_pair() {
+    partly_coplanar_pair();
+}
+
+fn partly_coplanar_pair() {
     let a = grid_box(4, 1.0, [0.0; 3]);
     let b = grid_box(4, 1.0, [0.5, 0.0, 0.25]);
     // Analytic overlap: 0.5 * 1 * 0.75 = 0.375.
@@ -171,43 +185,53 @@ fn boolean_hard_partly_coplanar_pair() {
         union(&a, &b),
         "partly-coplanar: union(A, B)",
         1.625,
+        1,
         Some(2),
     );
     checked_result(
         intersection(&a, &b),
         "partly-coplanar: intersection(A, B)",
         0.375,
+        1,
         Some(2),
     );
     checked_result(
         difference(&a, &b),
         "partly-coplanar: difference(A, B)",
         0.625,
+        1,
         Some(2),
     );
     checked_result(
         difference(&b, &a),
         "partly-coplanar: difference(B, A)",
         0.625,
+        1,
         Some(2),
     );
 }
 
 #[test]
 fn boolean_hard_contained_touching_pair() {
+    contained_touching_pair();
+}
+
+fn contained_touching_pair() {
     let a = grid_box(4, 1.0, [0.0; 3]);
     let c = grid_box(2, 0.5, [0.25; 3]);
-    checked_result(union(&a, &c), "contained-touching: union(A, C)", 1.0, None);
+    checked_result(union(&a, &c), "contained-touching: union(A, C)", 1.0, 1, None);
     checked_result(
         intersection(&a, &c),
         "contained-touching: intersection(A, C)",
         0.125,
+        1,
         None,
     );
     checked_result(
         difference(&a, &c),
         "contained-touching: difference(A, C)",
         0.875,
+        1,
         Some(2),
     );
     assert_eq!(
@@ -215,4 +239,64 @@ fn boolean_hard_contained_touching_pair() {
         Err(BooleanError::EmptyResult),
         "contained-touching: difference(C, A)"
     );
+}
+
+fn rotated_pair() {
+    let a = grid_box(4, 2.0, [0.0; 3]);
+    let (vertices, triangles) = grid_box(4, 2.0, [0.0; 3]).to_triangles();
+    let c = 3f64.sqrt() / 2.0;
+    let s = 0.5;
+    let vertices = vertices
+        .into_iter()
+        .map(|v| Vec3::new(c * v.x - s * v.y, s * v.x + c * v.y, 1.5 * v.z))
+        .collect();
+    let b = Mesh::from_triangles(vertices, &triangles)
+        .unwrap_or_else(|error| panic!("rotated: input B: {error}"));
+    assert!(b.is_watertight(), "rotated: input B: watertight");
+    assert_eq!(b.faces.len(), 192, "rotated: input B: triangles");
+    assert_volume(&b, 12.0);
+
+    // The overlap octagon has area 8 - 8 / sqrt(3) and height 2.
+    checked_result(
+        union(&a, &b),
+        "rotated: union(A, B)",
+        4.0 + 16.0 / 3f64.sqrt(),
+        1,
+        Some(2),
+    );
+    checked_result(
+        intersection(&a, &b),
+        "rotated: intersection(A, B)",
+        16.0 - 16.0 / 3f64.sqrt(),
+        1,
+        Some(2),
+    );
+    checked_result(
+        difference(&a, &b),
+        "rotated: difference(A, B)",
+        16.0 / 3f64.sqrt() - 8.0,
+        4,
+        Some(8),
+    );
+    checked_result(
+        difference(&b, &a),
+        "rotated: difference(B, A)",
+        16.0 / 3f64.sqrt() - 4.0,
+        1,
+        Some(-4),
+    );
+}
+
+#[test]
+fn boolean_hard_rotated_pair() {
+    rotated_pair();
+}
+
+#[test]
+fn boolean_hard_pairs_watertight_signed_volume() {
+    rotated_pair();
+    touching_pair();
+    contained_touching_pair();
+    partly_coplanar_pair();
+    touching_offset_pair();
 }
