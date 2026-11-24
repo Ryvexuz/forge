@@ -1,6 +1,0 @@
-reflect schema 1
-type Tiny version=1 fields=3
-field title kind=text since=1 label="Title"
-field scale kind=f64 since=1 label="Scale" unit="m" min=0x0000000000000000 max=0x4024000000000000 default=0x3ff0000000000000
-field count kind=u64 since=1 readonly
-end
