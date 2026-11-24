@@ -29,11 +29,8 @@ fn invalid(line: usize, what: &str) -> UsdError {
         what: what.into(),
     }
 }
-fn bits(v: Vec3, expected: [f32; 3]) {
-    assert_eq!(
-        [v.x, v.y, v.z].map(f32::to_bits),
-        expected.map(f32::to_bits)
-    );
+fn bits(v: Vec3, e: [f32; 3]) {
+    assert_eq!([v.x, v.y, v.z].map(f32::to_bits), e.map(f32::to_bits));
 }
 fn close(actual: Vec3, expected: [f32; 3], tolerance: f32) {
     for (a, e) in [actual.x, actual.y, actual.z].into_iter().zip(expected) {
@@ -41,10 +38,8 @@ fn close(actual: Vec3, expected: [f32; 3], tolerance: f32) {
     }
 }
 fn mismatch(a: &Scene, b: &Scene, what: &str) {
-    assert_eq!(
-        compare_scenes(a, b),
-        Err(UsdError::Mismatch { what: what.into() })
-    );
+    let want = Err(UsdError::Mismatch { what: what.into() });
+    assert_eq!(compare_scenes(a, b), want);
 }
 const ROOT: &str = "def Xform \"other\"";
 const TRANSLATE: &str = "double3 xformOp:translate = (1, 2, 3)";
@@ -385,10 +380,8 @@ fn usd_refuses_invalid_files() {
     refuses(&hostile, unsupported(2, "unknown"));
     for value in [f32::from_bits(1), f32::MIN_POSITIVE, f32::MAX] {
         let parsed = import_usda(&edit(&text, "(1, 2, 3)", &format!("({value}, 0, 0)"))).unwrap();
-        assert_eq!(
-            parsed.hierarchy.nodes[0].transform.translation.x.to_bits(),
-            value.to_bits()
-        );
+        let got = parsed.hierarchy.nodes[0].transform.translation.x.to_bits();
+        assert_eq!(got, value.to_bits());
     }
 }
 
