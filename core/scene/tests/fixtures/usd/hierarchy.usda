@@ -1,0 +1,31 @@
+#usda 1.0
+
+def Xform "root"
+{
+    double3 xformOp:translate = (1, 2, 3)
+    uniform token[] xformOpOrder = ["xformOp:translate"]
+
+    def Xform "arm"
+    {
+        float3 xformOp:translate = (0.5, 0, -0.25)
+        float3 xformOp:rotateXYZ = (0, 0, 90)
+        uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ"]
+
+        def Mesh "tri"
+        {
+            float3 xformOp:scale = (2, 2, 2)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+            int[] faceVertexCounts = [3]
+            int[] faceVertexIndices = [0, 1, 2]
+            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        }
+    }
+
+    def Xform "empty"
+    {
+    }
+}
+
+def Xform "other"
+{
+}
