@@ -4,6 +4,14 @@
 //! Intersection coordinates are rational numbers rounded to nearest binary64,
 //! ties to even. Rounding can make distinct endpoints coincide; it never changes
 //! the topology decision. No epsilon, coordinate band, or magnitude cap is used.
+//!
+//! Exact rational cut points are rounded coordinatewise to nearest, so the same
+//! exact point always has the same binary64 coordinates and welds across operands.
+//! Rounding can break incidence: exact edge points can fail the splitter's exact
+//! on-segment or chart tests. Tags preserve the incidence decided before rounding,
+//! giving faces sharing an edge the same placement without a geometric adjustment.
+//! Distinct exact points that round together retain their own tags here; the
+//! splitter owns their merged vertex and refuses merges that would crack an edge.
 
 use crate::predicates::{orient2d, orient3d};
 use crate::vec3::Vec3;
@@ -17,6 +25,68 @@ pub enum Intersection {
     /// Boundary order, starting at the lexicographically smallest rounded point.
     /// Either winding is possible. Collinear contacts use `Segment` instead.
     CoplanarOverlap(Vec<Vec3>),
+}
+
+/// Where a point lies, in the argument's original vertex order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Feature {
+    /// An input vertex.
+    Vertex(usize),
+    /// An input edge, with its smaller local index first.
+    Edge(usize, usize),
+    /// The relative interior of the triangle.
+    Face,
+}
+
+/// A rounded point with exact incidence on the first and second arguments.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TaggedPoint {
+    /// Rounded coordinates.
+    pub point: Vec3,
+    /// Incidence in argument order.
+    pub on: [Feature; 2],
+}
+
+/// Intersection topology with each exact point's incidence retained separately.
+#[derive(Clone, Debug, PartialEq)]
+pub enum TaggedIntersection {
+    /// No contact.
+    None,
+    /// Closed segment, including a point contact.
+    Segment(TaggedPoint, TaggedPoint),
+    /// Corners in the same boundary order as `Intersection`.
+    CoplanarOverlap(Vec<TaggedPoint>),
+}
+
+impl TaggedIntersection {
+    /// Remove incidence without changing points, duplicates or ordering.
+    pub fn untagged(&self) -> Intersection {
+        match self {
+            Self::None => Intersection::None,
+            Self::Segment(p, q) => Intersection::Segment(p.point, q.point),
+            Self::CoplanarOverlap(poly) => {
+                Intersection::CoplanarOverlap(poly.iter().map(|p| p.point).collect())
+            }
+        }
+    }
+
+    /// Exchange the two arguments' incidence, leaving the geometry unchanged.
+    pub fn swapped(&self) -> TaggedIntersection {
+        self.map_points(|mut p| {
+            p.on.swap(0, 1);
+            p
+        })
+    }
+
+    fn map_points(&self, mut map: impl FnMut(TaggedPoint) -> TaggedPoint) -> Self {
+        match self {
+            Self::None => Self::None,
+            Self::Segment(p, q) => Self::Segment(map(*p), map(*q)),
+            Self::CoplanarOverlap(poly) => {
+                Self::CoplanarOverlap(poly.iter().copied().map(map).collect())
+            }
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -43,7 +113,17 @@ type Triangle = [Point; 3];
 /// triangle order do not affect the result, including its boundary ordering.
 /// The only inexact operation is the final rounding of constructed coordinates.
 pub fn intersect_triangles(a: [Vec3; 3], b: [Vec3; 3]) -> Result<Intersection, IntersectionError> {
+    intersect_triangles_tagged(a, b).map(|t| t.untagged())
+}
+
+/// Intersect triangles, retaining exact incidence in caller argument/vertex order.
+/// Validation, rounded coordinates and topology match `intersect_triangles`.
+pub fn intersect_triangles_tagged(
+    a: [Vec3; 3],
+    b: [Vec3; 3],
+) -> Result<TaggedIntersection, IntersectionError> {
     let mut triangles = [a, b].map(|t| t.map(|v| [v.x, v.y, v.z]));
+    let original = triangles;
     if !triangles.iter().flatten().flatten().all(|x| x.is_finite()) {
         return Err(IntersectionError::NonFiniteCoordinate);
     }
@@ -59,22 +139,39 @@ pub fn intersect_triangles(a: [Vec3; 3], b: [Vec3; 3]) -> Result<Intersection, I
         triangle.sort_by(compare);
         projection(triangle).ok_or(IntersectionError::DegenerateTriangle)?;
     }
-    if compare_triangles(&triangles[0], &triangles[1]) == Ordering::Greater {
+    let swapped = compare_triangles(&triangles[0], &triangles[1]) == Ordering::Greater;
+    if swapped {
         triangles.swap(0, 1);
     }
+    let orders: [[usize; 3]; 2] = std::array::from_fn(|i| {
+        triangles[i].map(|p| {
+            original[i ^ usize::from(swapped)]
+                .iter()
+                .position(|&q| p == q)
+                .expect("sorting preserves validated input vertices")
+        })
+    });
     let [a, b] = triangles;
     let sides = b.map(|p| side(a, p));
-    if sides == [0; 3] {
+    let result = if sides == [0; 3] {
         coplanar(a, b)
     } else {
         let mut points = Vec::new();
-        for (triangle, other) in [(a, b), (b, a)] {
+        for (argument, (triangle, other)) in [(a, b), (b, a)].into_iter().enumerate() {
             let axes = projection(&other).ok_or(IntersectionError::DegenerateTriangle)?;
             let distances = triangle.map(|p| side(other, p));
             for i in 0..3 {
                 let j = (i + 1) % 3;
                 if distances[i] == 0 && inside(other, triangle[i], axes) {
-                    points.push(triangle[i]);
+                    let mut on = [Feature::Face; 2];
+                    on[argument] = Feature::Vertex(i);
+                    on[1 - argument] = feature(std::array::from_fn(|k| {
+                        on_edge(triangle[i], other[k], other[(k + 1) % 3], axes)
+                    }));
+                    points.push(TaggedPoint {
+                        point: vector(triangle[i]),
+                        on,
+                    });
                 }
                 if distances[i] * distances[j] == -1 {
                     let signs = std::array::from_fn::<_, 3, _>(|k| {
@@ -85,16 +182,54 @@ pub fn intersect_triangles(a: [Vec3; 3], b: [Vec3; 3]) -> Result<Intersection, I
                             determinant3(other, triangle[j]).absolute(),
                             determinant3(other, triangle[i]).absolute(),
                         ];
-                        points.push(construct(triangle[i], triangle[j], weights)?);
+                        let mut on = [Feature::Face; 2];
+                        on[argument] = Feature::Edge(i.min(j), i.max(j));
+                        on[1 - argument] = feature(signs.map(|s| s == 0));
+                        points.push(TaggedPoint {
+                            point: vector(construct(triangle[i], triangle[j], weights)?),
+                            on,
+                        });
                     }
                 }
             }
         }
-        points.sort_by(compare);
+        points.sort_by(|p, q| {
+            compare(
+                &[p.point.x, p.point.y, p.point.z],
+                &[q.point.x, q.point.y, q.point.z],
+            )
+        });
         Ok(match (points.first(), points.last()) {
-            (Some(&start), Some(&end)) => Intersection::Segment(vector(start), vector(end)),
-            _ => Intersection::None,
+            (Some(&start), Some(&end)) => TaggedIntersection::Segment(start, end),
+            _ => TaggedIntersection::None,
         })
+    }?;
+    Ok(result.map_points(|mut p| {
+        for (i, order) in orders.iter().enumerate() {
+            p.on[i] = match p.on[i] {
+                Feature::Vertex(k) => Feature::Vertex(order[k]),
+                Feature::Edge(k, l) => {
+                    Feature::Edge(order[k].min(order[l]), order[k].max(order[l]))
+                }
+                Feature::Face => Feature::Face,
+            };
+        }
+        if swapped {
+            p.on.swap(0, 1);
+        }
+        p
+    }))
+}
+
+fn feature(edges: [bool; 3]) -> Feature {
+    for (k, &incident) in edges.iter().enumerate() {
+        if incident && edges[(k + 2) % 3] {
+            return Feature::Vertex(k);
+        }
+    }
+    match edges.iter().position(|&e| e) {
+        Some(k) => Feature::Edge(k.min((k + 1) % 3), k.max((k + 1) % 3)),
+        None => Feature::Face,
     }
 }
 
@@ -172,7 +307,7 @@ struct Corner {
     edges: [bool; 6],
 }
 
-fn coplanar(a: Triangle, b: Triangle) -> Result<Intersection, IntersectionError> {
+fn coplanar(a: Triangle, b: Triangle) -> Result<TaggedIntersection, IntersectionError> {
     let axes = projection(&a).ok_or(IntersectionError::DegenerateTriangle)?;
     let edges: [(Point, Point); 6] = std::array::from_fn(|i| {
         let t = if i < 3 { a } else { b };
@@ -212,16 +347,23 @@ fn coplanar(a: Triangle, b: Triangle) -> Result<Intersection, IntersectionError>
         }
     }
     corners.sort_by(|a, b| compare(&a.point, &b.point));
+    let tagged = |c: &Corner| TaggedPoint {
+        point: vector(c.point),
+        on: [
+            feature([c.edges[0], c.edges[1], c.edges[2]]),
+            feature([c.edges[3], c.edges[4], c.edges[5]]),
+        ],
+    };
     match corners.len() {
-        0 => return Ok(Intersection::None),
+        0 => return Ok(TaggedIntersection::None),
         1 => {
-            let p = vector(corners[0].point);
-            return Ok(Intersection::Segment(p, p));
+            let p = tagged(&corners[0]);
+            return Ok(TaggedIntersection::Segment(p, p));
         }
         2 => {
-            return Ok(Intersection::Segment(
-                vector(corners[0].point),
-                vector(corners[1].point),
+            return Ok(TaggedIntersection::Segment(
+                tagged(&corners[0]),
+                tagged(&corners[1]),
             ));
         }
         _ => {}
@@ -253,7 +395,7 @@ fn coplanar(a: Triangle, b: Triangle) -> Result<Intersection, IntersectionError>
     let mut previous = usize::MAX;
     let mut current = 0;
     for _ in 0..corners.len() {
-        polygon.push(vector(corners[current].point));
+        polygon.push(tagged(&corners[current]));
         let next = neighbours[current]
             .iter()
             .copied()
@@ -269,7 +411,7 @@ fn coplanar(a: Triangle, b: Triangle) -> Result<Intersection, IntersectionError>
     if current != 0 {
         return Err(IntersectionError::InvalidConstruction);
     }
-    Ok(Intersection::CoplanarOverlap(polygon))
+    Ok(TaggedIntersection::CoplanarOverlap(polygon))
 }
 
 // Construction arithmetic only: signed base-2^32 integers in units of the

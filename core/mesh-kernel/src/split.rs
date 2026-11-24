@@ -1,7 +1,15 @@
 //! Exact, deterministic constrained face splitting without coordinate construction.
+//!
+//! Intersection constructs exact rational points and rounds each coordinate to
+//! nearest. Equal exact points therefore weld by equal coordinates across operands.
+//! Rounding can break incidence, making exact on-segment and chart tests disagree
+//! across a shared edge. `split_faces_tagged` uses incidence decided exactly before
+//! rounding, without a geometric adjustment. Distinct exact points can round
+//! together: intersection retains their tags; this splitter owns the merged vertex,
+//! merges its tags by one rule, and refuses merges that would crack a shared edge.
 
 use crate::halfedge::{Mesh, MeshError};
-use crate::intersect::Intersection;
+use crate::intersect::{Feature, Intersection, TaggedIntersection};
 use crate::predicates::orient2d;
 use crate::vec3::Vec3;
 use std::cmp::Ordering;
@@ -20,6 +28,10 @@ pub enum SplitError {
     PointOutsideFace { face: usize },
     /// A shared-edge point is strictly inside an incident face's chart.
     InconsistentEdgePoint { face: usize },
+    /// Rounded points carry incompatible incidence on this face.
+    TagConflict { face: usize },
+    /// A tag disagrees with a local corner or the face's original boundary.
+    TagMismatch { face: usize },
     /// Constraint interiors cross without a supplied vertex at the crossing.
     CrossingCuts { face: usize },
     /// The bounded flip queue could not recover a constraint.
@@ -191,8 +203,8 @@ fn input_triangles(mesh: &Mesh) -> Result<Vec<Triangle>, SplitError> {
 /// M8 rounds constructed points to nearest f64. A point intended to be on an
 /// edge can therefore land just off it. This function is exact on the received
 /// values: it refuses inconsistent points with `PointOutsideFace`,
-/// `InconsistentEdgePoint` or `BadTriangle`, rather than snapping or cracking.
-/// Making rounded points consistent belongs to M11 or a later follow-up.
+/// `InconsistentEdgePoint` or `BadTriangle`, rather than changing coordinates.
+/// Use `split_faces_tagged` to preserve exact incidence of rounded cut points.
 pub fn split_faces(mesh: &Mesh, cuts: &[Vec<Intersection>]) -> Result<Mesh, SplitError> {
     split_faces_with_seams(mesh, cuts).map(|(mesh, _)| mesh)
 }
@@ -202,6 +214,62 @@ pub fn split_faces(mesh: &Mesh, cuts: &[Vec<Intersection>]) -> Result<Mesh, Spli
 pub fn split_faces_with_seams(
     mesh: &Mesh,
     cuts: &[Vec<Intersection>],
+) -> Result<(Mesh, BTreeSet<[usize; 2]>), SplitError> {
+    split_body(mesh, cuts, None)
+}
+
+/// Like `split_faces_with_seams`; each point is placed by `on[0]` on this mesh.
+pub fn split_faces_tagged(
+    mesh: &Mesh,
+    cuts: &[Vec<TaggedIntersection>],
+) -> Result<(Mesh, BTreeSet<[usize; 2]>), SplitError> {
+    let plain: Vec<Vec<_>> = cuts
+        .iter()
+        .map(|list| list.iter().map(TaggedIntersection::untagged).collect())
+        .collect();
+    split_body(mesh, &plain, Some(cuts))
+}
+
+fn merge_tags(
+    tags: &[Feature],
+    p: Point,
+    t: Triangle,
+    vertices: &[Vec3],
+    face: usize,
+) -> Result<Feature, SplitError> {
+    let corner = t.iter().position(|&v| Point::new(vertices[v]) == p);
+    let mut normalized = Vec::new();
+    for &tag in tags {
+        let tag = match tag {
+            Feature::Vertex(k) if k >= 3 || corner != Some(k) => {
+                return Err(SplitError::TagMismatch { face });
+            }
+            Feature::Edge(k, l)
+                if k >= l || l >= 3 || corner.is_some_and(|m| m != k && m != l) =>
+            {
+                return Err(SplitError::TagMismatch { face });
+            }
+            Feature::Face | Feature::Edge(_, _) => corner.map_or(tag, Feature::Vertex),
+            other => other,
+        };
+        normalized.push(tag);
+    }
+    let mut merged = normalized[0];
+    for &tag in &normalized[1..] {
+        merged = match (merged, tag) {
+            (a, b) if a == b => a,
+            (Feature::Face, e @ Feature::Edge(_, _))
+            | (e @ Feature::Edge(_, _), Feature::Face) => e,
+            _ => return Err(SplitError::TagConflict { face }),
+        };
+    }
+    Ok(merged)
+}
+
+fn split_body(
+    mesh: &Mesh,
+    cuts: &[Vec<Intersection>],
+    tagged: Option<&[Vec<TaggedIntersection>]>,
 ) -> Result<(Mesh, BTreeSet<[usize; 2]>), SplitError> {
     if cuts.len() != mesh.faces.len() {
         return Err(SplitError::CutCountMismatch {
@@ -263,6 +331,36 @@ pub fn split_faces_with_seams(
         vertices.push(p.vector());
     }
     indices.sort_by(|a, b| a.0.compare(&b.0));
+    let mut own = vec![BTreeMap::new(); cuts.len()];
+    let mut tagged_points = BTreeSet::new();
+    // Validate and merge every face's tags before any chart or edge-point entry.
+    if let Some(lists) = tagged {
+        for (face, list) in lists.iter().enumerate() {
+            let mut tags: BTreeMap<usize, Vec<Feature>> = BTreeMap::new();
+            for cut in list {
+                let endpoints;
+                let points = match cut {
+                    TaggedIntersection::None => &[][..],
+                    TaggedIntersection::Segment(p, q) => {
+                        endpoints = [*p, *q];
+                        &endpoints[..]
+                    }
+                    TaggedIntersection::CoplanarOverlap(poly) => poly.as_slice(),
+                };
+                for p in points {
+                    let i = index(&indices, Point::new(p.point));
+                    tags.entry(i).or_default().push(p.on[0]);
+                    tagged_points.insert(i);
+                }
+            }
+            for (p, tags) in tags {
+                own[face].insert(
+                    p,
+                    merge_tags(&tags, Point::new(vertices[p]), input[face], &vertices, face)?,
+                );
+            }
+        }
+    }
     let points: Vec<BTreeSet<usize>> = points
         .iter()
         .map(|set| set.iter().map(|&p| index(&indices, p)).collect())
@@ -295,7 +393,12 @@ pub fn split_faces_with_seams(
             return Err(SplitError::DegenerateFace { face });
         }
         for &p in &points[face] {
-            if let Location::Edge(e) = chart.classify(t, p) {
+            let location = match own[face].get(&p) {
+                Some(Feature::Edge(k, l)) => Location::Edge(edge(t[*k], t[*l])),
+                Some(_) => continue,
+                None => chart.classify(t, p),
+            };
+            if let Location::Edge(e) = location {
                 edge_points.entry(e).or_default().insert(p);
             }
         }
@@ -312,7 +415,18 @@ pub fn split_faces_with_seams(
         for e in triangle_edges(t) {
             if let Some(set) = edge_points.get(&e) {
                 for &p in set {
-                    if chart.classify(t, p) == Location::Inside {
+                    if tagged_points.contains(&p) {
+                        let other_edge = match own[face].get(&p) {
+                            Some(Feature::Edge(k, l)) => Some(edge(t[*k], t[*l])),
+                            _ => incidence.get(&p).copied(),
+                        };
+                        if t.iter()
+                            .any(|&v| Point::new(vertices[v]) == Point::new(vertices[p]))
+                            || other_edge.is_some_and(|other| other != e)
+                        {
+                            return Err(SplitError::TagConflict { face });
+                        }
+                    } else if chart.classify(t, p) == Location::Inside {
                         return Err(SplitError::InconsistentEdgePoint { face });
                     }
                     local_points.insert(p);
@@ -321,6 +435,12 @@ pub fn split_faces_with_seams(
             }
         }
         for &p in &local_points {
+            if own[face].get(&p) == Some(&Feature::Face)
+                && !incidence.contains_key(&p)
+                && matches!(chart.classify(t, p), Location::Edge(_))
+            {
+                return Err(SplitError::TagMismatch { face });
+            }
             if chart.classify(t, p) == Location::Outside && !incidence.contains_key(&p) {
                 return Err(SplitError::PointOutsideFace { face });
             }
@@ -331,7 +451,9 @@ pub fn split_faces_with_seams(
             .map(|(a, b)| ((a, b), vec![a, b]))
             .collect();
         for &p in &local_points {
-            if chart.classify(t, p) == Location::Corner {
+            if matches!(own[face].get(&p), Some(Feature::Vertex(_)))
+                || (!own[face].contains_key(&p) && chart.classify(t, p) == Location::Corner)
+            {
                 continue;
             }
             if let Some(e) = incidence.get(&p) {

@@ -3,8 +3,8 @@
 use crate::broadphase::candidate_pairs;
 use crate::classify::{classify_regions, Side};
 use crate::halfedge::{Mesh, MeshError};
-use crate::intersect::{intersect_triangles, Intersection, IntersectionError};
-use crate::split::{split_faces_with_seams, SplitError};
+use crate::intersect::{intersect_triangles_tagged, IntersectionError, TaggedIntersection};
+use crate::split::{split_faces_tagged, SplitError};
 use crate::vec3::Vec3;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -117,7 +117,7 @@ fn compose(a: &Mesh, b: &Mesh, operation: Operation) -> Result<Mesh, BooleanErro
     let mut cuts_a = vec![Vec::new(); a.faces.len()];
     let mut cuts_b = vec![Vec::new(); b.faces.len()];
     for (face_a, face_b) in candidate_pairs(a, b) {
-        let cut = intersect_triangles(
+        let cut = intersect_triangles_tagged(
             triangles_a[face_a as usize].map(|i| vertices_a[i]),
             triangles_b[face_b as usize].map(|i| vertices_b[i]),
         )
@@ -126,16 +126,16 @@ fn compose(a: &Mesh, b: &Mesh, operation: Operation) -> Result<Mesh, BooleanErro
             face_b,
             error,
         })?;
-        if cut != Intersection::None {
+        if cut != TaggedIntersection::None {
             cuts_a[face_a as usize].push(cut.clone());
-            cuts_b[face_b as usize].push(cut);
+            cuts_b[face_b as usize].push(cut.swapped());
         }
     }
-    let (split_a, seams_a) = split_faces_with_seams(a, &cuts_a).map_err(|error| BooleanError::Split {
+    let (split_a, seams_a) = split_faces_tagged(a, &cuts_a).map_err(|error| BooleanError::Split {
         operand: Operand::A,
         error,
     })?;
-    let (split_b, seams_b) = split_faces_with_seams(b, &cuts_b).map_err(|error| BooleanError::Split {
+    let (split_b, seams_b) = split_faces_tagged(b, &cuts_b).map_err(|error| BooleanError::Split {
         operand: Operand::B,
         error,
     })?;
