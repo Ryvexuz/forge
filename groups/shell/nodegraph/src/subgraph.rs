@@ -117,6 +117,7 @@ fn unique_keys(graph: &Graph) -> Result<(), SubgraphError> {
 
 pub fn save_asset(graph: &Graph) -> Result<String, SubgraphError> {
     asset_rule(graph, "")?;
+    interface(graph, PortDir::Input)?;
     for (_, node) in graph.nodes() {
         if let Some(path) = node.type_name.strip_prefix(ASSET_PREFIX) {
             check_asset_path(path)?;
@@ -537,7 +538,9 @@ fn interface(graph: &Graph, dir: PortDir) -> Result<Vec<PortDesc>, SubgraphError
                 .iter()
                 .find(|p| p.name == e.port)
                 .expect("validated port");
-            feeder_name(&port.value_type).map_err(SubgraphError::Kind)?;
+            if dir == PortDir::Input {
+                feeder_name(&port.value_type).map_err(SubgraphError::Kind)?;
+            }
             Ok(PortDesc {
                 name: name.clone(),
                 value_type: port.value_type.clone(),
