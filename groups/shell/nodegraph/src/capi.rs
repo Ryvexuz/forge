@@ -432,6 +432,10 @@ pub unsafe extern "C" fn ng_read_image(
     guard(|| {
         with_state(handle, |s| {
             pointer(out_len)?;
+            if let Some(Value::Image(image)) = s.value.as_ref() {
+                // SAFETY: out_len checked non-null above; caller guarantees writable alignment.
+                unsafe { out_len.write(image.pixels.len()) };
+            }
             pointer(out_width)?;
             pointer(out_height)?;
             if !matches!(s.value.as_ref(), Some(Value::Image(_))) {
