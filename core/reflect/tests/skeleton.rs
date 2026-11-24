@@ -37,11 +37,13 @@ fn lib_exports_all_modules() {
                 .any(|line| line.starts_with("//!") && !line[3..].trim().is_empty()),
             "module has no documentation: {name}"
         );
+        // R2a dropped the stub check because modules now hold code.
         assert!(
             source
                 .lines()
-                .all(|line| line.trim().is_empty() || line.starts_with("//!")),
-            "module is not a documentation-only stub: {name}"
+                .next()
+                .is_some_and(|line| line.starts_with("//!") && !line[3..].trim().is_empty()),
+            "module does not start with a documentation line: {name}"
         );
     }
 }
