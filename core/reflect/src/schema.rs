@@ -161,7 +161,7 @@ fn write_kind(text: &mut String, mut kind: &Kind) {
     }
 }
 
-fn write_text(text: &mut String, value: &str) {
+pub(crate) fn write_text(text: &mut String, value: &str) {
     text.push('"');
     for ch in value.chars() {
         match ch {
