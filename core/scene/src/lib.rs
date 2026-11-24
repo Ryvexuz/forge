@@ -13,3 +13,4 @@ pub mod math;
 pub mod scene;
 pub mod transform;
 pub mod usd;
+pub mod usd_write;
