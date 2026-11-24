@@ -235,3 +235,34 @@ fn quaternion_matrix_matches_independent_rodrigues_reference() {
         }
     }
 }
+
+#[test]
+fn quat_components_returns_normalized_xyzw() {
+    assert_eq!(
+        Quat::IDENTITY.components().map(f32::to_bits),
+        [0, 0, 0, 0x3f80_0000]
+    );
+    assert_eq!(
+        Quat::new(0.0, 0.0, 0.0, 2.0)
+            .unwrap()
+            .components()
+            .map(f32::to_bits),
+        [0, 0, 0, 0x3f80_0000]
+    );
+    assert_eq!(
+        Quat::new(-0.0, 0.0, 0.0, 1.0).unwrap().components()[0].to_bits(),
+        0x8000_0000
+    );
+    let expected = [1.0_f64, 2.0, 3.0, 4.0].map(|v| ((v / 30_f64.sqrt()) as f32).to_bits());
+    assert_eq!(
+        Quat::new(1.0, 2.0, 3.0, 4.0)
+            .unwrap()
+            .components()
+            .map(f32::to_bits),
+        expected
+    );
+    assert_eq!(
+        Quat::new(0.0, 0.0, 0.0, -1.0).unwrap().components()[3],
+        -1.0
+    );
+}

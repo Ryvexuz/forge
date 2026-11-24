@@ -208,6 +208,10 @@ impl Quat {
             components: values.map(|v| (f64::from(v) / length) as f32),
         })
     }
+    /// The stored unit components, in x, y, z, w order (the order `new` takes and `from_trs` reads).
+    pub fn components(self) -> [f32; 4] {
+        self.components
+    }
 }
 
 impl Mat4 {
