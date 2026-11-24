@@ -1,0 +1,12 @@
+# edit.script: node 1.6 check 1.6.6 (three expected errors)
+set vehicle.mass_kg 1500.0
+set vehicle.wheels[1].radius_m 0.34
+add vehicle.wheels {radius_m=0.33,width_m=0.23,steered=false}
+remove vehicle.wheels[0]
+set vehicle.name "Edited"
+set vehicle.note none
+set vehicle.drive Front
+get vehicle.mass_kg
+set vehicle.speed 1.0 # expect-error
+set vehicle.wheels[9].radius_m 0.3 # expect-error
+set vehicle.mass_kg 9000.0 # expect-error

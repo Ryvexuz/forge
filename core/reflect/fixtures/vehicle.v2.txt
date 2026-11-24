@@ -1,0 +1,9 @@
+reflect value 1
+type Vehicle version=2 hash=8b1bd5d2c9f51001
+name = "Rally"
+mass_kg = 1350.0
+position = [0.0,0.5,-2.25]
+wheels = [{radius_m=0.31,width_m=0.21,steered=true},{radius_m=0.32,width_m=0.22,steered=false}]
+note = some("demo")
+drive = All
+end

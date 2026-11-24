@@ -29,9 +29,6 @@ Unreadable fixtures are usage errors naming the file.
 The parsed but unavailable modes return 2 with these exact stderr lines:
 
 ```text
-reflect_demo: usage: --roundtrip is not implemented yet (R9b)
-reflect_demo: usage: --load is not implemented yet (R9b)
-reflect_demo: usage: --script is not implemented yet (R9b)
 reflect_demo: usage: --glue-proof is not implemented yet (R10)
 reflect_demo: usage: --watch is not implemented yet (R10)
 reflect_demo: usage: --inject-fault is not implemented yet (R10)
@@ -39,7 +36,7 @@ reflect_demo: usage: --inject-fault is not implemented yet (R10)
 
 Done-check command form, from the Broadsword root (run by the orchestrator):
 `build/bin/broadsword.exe run forge -- cargo run --offline --release -p reflect --example reflect_demo -- <flags>`.
-Task verification adds `--task t-20261124-185600` after `forge`.
+Task verification adds `--task t-20261124-220130` after `forge`.
 The demo reads fixtures as bytes and never writes files.
 
 ## Schema text
@@ -125,21 +122,239 @@ must expect 10 widgets, not 9.
 Run from the Broadsword root; retain raw output. These commands have not been
 run by the coder. The orchestrator supplies its execution timeout.
 
-1. `build/bin/broadsword.exe test forge --task t-20261124-185600`
-2. `build/bin/broadsword.exe run forge --task t-20261124-185600 -- cargo run --offline --release -p reflect --example reflect_demo -- --expect-schema Vehicle fixtures/vehicle.schema.txt`
-3. `build/bin/broadsword.exe run forge --task t-20261124-185600 -- cargo run --offline --release -p reflect --example reflect_demo -- --expect-inspector Vehicle fixtures/vehicle.inspector.txt`
-4. `python -I -c "import hashlib,sys;[print(len(open(p,'rb').read()), hashlib.sha256(open(p,'rb').read()).hexdigest()) for p in sys.argv[1:]]" <wt>/core/reflect/fixtures/vehicle.schema.txt <wt>/core/reflect/fixtures/vehicle.inspector.txt`
-5. `build/bin/broadsword.exe run forge --task t-20261124-185600 -- cargo clippy --offline -p reflect --all-targets -- -D warnings`
-   and `build/bin/broadsword.exe check forge --task t-20261124-185600`
+1. `build/bin/broadsword.exe test forge --task t-20261124-220130`
+2. `build/bin/broadsword.exe run forge --task t-20261124-220130 -- cargo run --offline --release -p reflect --example reflect_demo -- --roundtrip Vehicle fixtures/vehicle.v2.txt`
+3. `build/bin/broadsword.exe run forge --task t-20261124-220130 -- cargo run --offline --release -p reflect --example reflect_demo -- --load Vehicle fixtures/vehicle.v1.txt`
+   and `build/bin/broadsword.exe run forge --task t-20261124-220130 -- cargo run --offline --release -p reflect --example reflect_demo -- --script fixtures/edit.script fixtures/edit.expected.txt`
+4. `python -I -c "import hashlib,sys;[print(len(open(p,'rb').read()), hashlib.sha256(open(p,'rb').read()).hexdigest()) for p in sys.argv[1:]]" <wt>/core/reflect/fixtures/vehicle.v2.txt <wt>/core/reflect/fixtures/vehicle.v1.txt <wt>/core/reflect/fixtures/edit.script <wt>/core/reflect/fixtures/edit.expected.txt`
+5. `build/bin/broadsword.exe run forge --task t-20261124-220130 -- cargo clippy --offline -p reflect --all-targets -- -D warnings`
+   and `build/bin/broadsword.exe check forge --task t-20261124-220130`
 6. `git -C <wt> diff --stat main`
 
-Repeat command 1 for each brief mutation, independently, then restore and repeat
-command 1 again. Trimming should fail `demo_reports_each_mismatch`; silently
-accepting roundtrip should fail `demo_args_usage_errors`; decrementing the
-widget count should fail `demo_schema_and_inspector_match_fixtures`.
-Report main's test count and the task's count, the program output lines, and
-the actual mutation failures. Formatting checks remain an orchestrator duty.
+Fixture pins from the task brief (not from program output):
 
-## Value format, paths and scripts (to be written by R9b)
+| File under `fixtures/` | Bytes | SHA-256 |
+| --- | --- | --- |
+| `vehicle.v2.txt` | 252 | `c63c1de4b0b24773ee8cec2d5ebed25e9888900020ba122aac3a4adde8545f34` |
+| `vehicle.v1.txt` | 195 | `bd82c0c49175129c9da77629b682f761701ba8eb391a1b7347d9960deff5d85d` |
+| `edit.script` | 431 | `ea30fda4dda6de25e232f0793cbcb184826e2ed16dd9311b8ca4f15bb9a374b8` |
+| `edit.expected.txt` | 248 | `0d62c5c5643a59afa449c695a5bc586849bbf36ae652251880b25b39fd81b6c4` |
+
+Repeat command 1 separately with each R9b mutation, restore, then repeat command
+1 again: force `golden = true` (must fail `demo_roundtrip_matches_fixture`);
+count renamed notes as defaulted (must fail `demo_load_v1_fixture`); skip
+the script's final byte comparison (must fail
+`demo_script_reports_mismatch_and_failure`). These are behavioural assertions,
+not compilation checks. Retain each named `... FAILED` line. The existing
+schema and inspector tests remain part of command 1; the old R9a roundtrip
+usage assertion is superseded by the value tests.
+
+Report main's test count and the task's count (the latter must add the four
+named value tests), the program output lines, fixture digests, mutation failures,
+clippy and check results. Formatting checks remain an orchestrator duty.
+No execution or mutation results are asserted here.
+
+## Value text
+
+`text::save_text` and `text::load_text` are the only value writer and reader.
+The demo embeds `reflect.toml` with `include_str!` and parses it with
+`Limits::parse`; there are no fallback limit values.
+
+1. Files are UTF-8 with LF line endings, including a final LF. CR is rejected.
+   The header is `reflect value 1`, followed by
+   `type <Name> version=<positive decimal> hash=<16 lowercase hex digits>`.
+   The type must match the requested descriptor; newer versions are errors.
+   A current-version file must have the current schema hash.
+2. The writer emits one `<field> = <value>` line per field in descriptor
+   order, then `end` and LF. No blank or trailing lines are accepted.
+   Current-version reads reject unknown, duplicate, out-of-order and missing
+   fields. Names, spacing and value tokens are not trimmed or normalized.
+3. Booleans are `true` or `false`; integers are canonical decimal (no `+`
+   or leading zeros). Finite floats use Rust's `Debug` tokens, for example
+   `1350.0`; reads require exactly the same canonical tokens. NaN and infinity fail.
+   Strings are double quoted: backslash, quote, LF, CR and TAB are escaped,
+   and other controls use `\u{hex}`; raw controls, bad escapes and noncanonical
+   spellings of escapes fail.
+   Enums use a declared bare variant name.
+4. Lists and arrays use `[v,v]`, without spaces; arrays require their declared
+   length. Structs use `{field=v,field=v}` in descriptor order, with every
+   field exactly once. Options are `none` or `some(v)`. Text bytes, list
+   lengths and nesting depth are checked against the parsed limits.
+5. Version migration applies only to the top-level struct. An older version's
+   hash is syntactically checked but not compared. Renames, ignored fields
+   and defaults follow the decisions in "Old versions" below; the writer
+   always emits the current version, names, hash and field order.
+
+The hand-worked [vehicle.v2.txt](../fixtures/vehicle.v2.txt) is the reference,
+not writer output to regenerate. It represents the built-in `Vehicle`:
+Rally, mass 1350.0, position `[0.0,0.5,-2.25]`, two wheels
+`(0.31,0.21,true)` and `(0.32,0.22,false)`, note `some("demo")`, drive `All`.
+Its header hash is `8b1bd5d2c9f51001`. The built-in `Wheel` is the first
+wheel above. `--roundtrip` saves that built-in value, compares reference bytes,
+loads its own saved text, saves again, and compares both bytes and `Value`
+equality. The expected file is never parsed or normalized for this comparison.
+
+## Old versions
+
+The hand-written [vehicle.v1.txt](../fixtures/vehicle.v1.txt) was not produced
+by the writer. Its zero hash is permitted because version 1 precedes version 2.
+For an old top-level file, current names are tried first, then `renamed_from`
+names; supplying both names is still a duplicate. Known fields may appear out
+of order. Unknown fields are reported and dropped without parsing their value.
+A missing field takes its declared default only if it was introduced after
+the file's version; otherwise loading fails with `missing field <name>`.
+Missing fields with no default also fail.
+
+The fixture reads `mass` into `mass_kg` with value `1234.5`, ignores `colour`,
+and defaults the absent, since-2 `drive` to `Rear`. Other fields are read from
+the file, including name `Old`. Notes are returned in encounter order, followed
+by defaults in descriptor order:
+
+```text
+note: field mass_kg read from old name mass (line 4)
+note: unknown field colour ignored (line 7)
+note: field drive set to its default
+```
+
+## Paths and scripts
+
+`path::parse_path` accepts a nonempty field name followed by zero or more
+indices or dotted fields: `name[index].field[index]`. Names match
+`[A-Za-z_][A-Za-z0-9_]*`; indices are decimal `usize`, with no sign, empty
+index, leading zero (except `0`), or overflow. Paths are root-relative;
+scripts require the `vehicle.` prefix and strip it before parsing.
+Whitespace, slash separators and other characters are not path syntax.
+The path's byte length is bounded by the parsed limits.
+
+Path errors and their Display forms (`at` is a zero-based byte offset):
+
+| Name | Display |
+| --- | --- |
+| `TooLong` | `path is <len> bytes, over the limit <max>` |
+| `Empty` | `empty path` |
+| `EmptySegment` | `empty name at byte <at>` |
+| `BadName` | `bad name at byte <at>` |
+| `BadChar` | `unexpected character at byte <at>` |
+| `UnclosedIndex` | `unclosed index at byte <at>` |
+| `BadIndex` | `bad index "<text>" at byte <at>` |
+
+Access errors use the local path (without `vehicle.`):
+
+| Name | Display |
+| --- | --- |
+| `NoField` | `<path>: no field <name>` |
+| `IndexOutOfRange` | `<path>: index <index> out of range (length <len>)` |
+| `NotIndexable` | `<path>: <kind> cannot be indexed` |
+| `NotAStruct` | `<path>: <kind> has no fields` |
+| `WrongKind` | `<path>: expected <expected>, got <got>` |
+| `NonFinite` | `<path>: NaN or infinity` |
+| `OutOfRange` | `<path>: value outside the field's range` |
+| `ReadOnly` | `<path>: field is read-only` |
+| `TooLong` | `<path>: more than <max> items` |
+| `Set`, `Change` | `<path>: <underlying error Display>` |
+
+`set_path` validates shape, finiteness, list limits, field ranges and readonly
+metadata before committing an edit and announcing its change. The demo does
+not duplicate these checks: all script edits go through `run_script` and
+therefore `set_path`. Its change sink intentionally discards announcements.
+
+Scripts are UTF-8, LF-separated lines, with CR rejected and file bytes bounded
+by the text limit. Blank space/tab-only lines and lines starting `#` are
+skipped. Commands are not trimmed; the separator is a literal space:
+
+| Command | Meaning |
+| --- | --- |
+| `set vehicle.<path> <value>` | Replace a value using the text reader's tokens. |
+| `get vehicle.<path>` | Return `get <full path> = <canonical token>` in the report. |
+| `add vehicle.<list path> <value>` | Append one typed item to a list, not an array. |
+| `remove vehicle.<list path>[<index>]` | Remove an existing list item, not an array item. |
+| `save <name>` | Return canonical text and `saved <name> bytes=<n>` in the report; never write a file. |
+
+Save names begin with ASCII alphanumeric or `_`, then contain only those
+characters, `.` or `-`, and cannot contain `..`. They are labels, not paths.
+Get/save report output is not printed by this demo; save texts are discarded.
+Each non-skipped command counts once. A line ending exactly ` # expect-error`
+must fail; its error is recorded and execution continues. An unmarked failure
+or marked success stops immediately. Earlier successful changes remain in the
+local object, but a failed run is never compared as a successful final state.
+
+Script command error Display forms:
+
+| Name | Display |
+| --- | --- |
+| `UnknownCommand` | `unknown command <name>` |
+| `MissingArgument` | `missing argument for <command>` |
+| `ExtraArgument` | `too many arguments for <command>` |
+| `BadRoot` | `path <path> does not start with <root>.` |
+| `Path` | `bad path <local path>: <PathError Display>` |
+| `Access` | `<AccessError Display>` |
+| `BadValue` | `bad <kind> value <text>` |
+| `NotAList` | `<path> is not a list (<kind>)` |
+| `NotAnItem` | `remove needs a list item path, got <path>` |
+| `BadSaveName` | `bad save name <name>` |
+| `Save` | `cannot save: <SaveError Display>` |
+
+Whole-script failures display `script is <bytes> bytes, over the limit <max>`,
+`line <n>: carriage return (scripts use LF line ends)`,
+`line <n>: <ScriptError Display>`, or
+`line <n>: expected an error, the command succeeded`.
+
+The hand-worked [edit.script](../fixtures/edit.script) changes mass, updates
+the second wheel, appends a wheel, removes the first, then changes name, note
+and drive and gets mass. The final reference is
+[edit.expected.txt](../fixtures/edit.expected.txt). The expected errors are:
+
+```text
+error line 10: speed: no field speed
+error line 11: wheels[9].radius_m: index 9 out of range (length 2)
+error line 12: mass_kg: value outside the field's range
+```
+
+## Output lines, R9b
+
+Successful fixture runs write these summary lines (load then prints its notes,
+script then prints its expected errors, in library order):
+
+```text
+roundtrip Vehicle bytes=252 golden=true text_identical=true value_equal=true result=PASS
+load Vehicle file=fixtures/vehicle.v1.txt from_version=1 to_version=2 defaulted=1 renamed=1 ignored=1 result=PASS
+script fixtures/edit.script commands=11 ok=8 errors=3 expected=fixtures/edit.expected.txt result=PASS
+```
+
+General summary and detail forms:
+
+```text
+roundtrip <Type> bytes=<n> golden=<bool> text_identical=<bool> value_equal=<bool> result=<PASS|FAIL>
+load <Type> file=<file> from_version=<v> to_version=<v> defaulted=<n> renamed=<n> ignored=<n> result=PASS
+note: <Note Display>
+load <Type> file=<file> result=FAIL
+script <file> commands=<n> ok=<n> errors=<n> expected=<expected> result=<PASS|FAIL>
+error line <n>: <ScriptError Display>
+script <file> result=FAIL
+error: <error Display>
+diff line=<k>
+```
+
+Paths in output are exactly as given. A successful roundtrip requires all
+three booleans; a successful script requires both the expected error count
+and exact final reference bytes. Script markers are counted on every line
+ending in ` # expect-error`, including comment lines skipped by the library.
+Roundtrip byte mismatches add `diff line=<k>`; script comparison failures
+always add it after expected-error details. Line numbering and final-LF
+comparison follow the schema byte rule above. For a script count-only mismatch
+with identical bytes, `diff line=0` explicitly means no byte difference.
+
+A failed load or failed script execution prints its short FAIL line then
+`error: <error Display>`. Invalid UTF-8 uses `error: file is not UTF-8`.
+These failures and comparison failures exit 1; PASS exits 0.
+Unreadable inputs (including the script's expected file) exit 2 with the usage
+diagnostic on stderr and no stdout. Both script files are read before execution.
+
+Limits parse errors write `reflect_demo: FAIL limits <error>` to stderr and
+exit 1. Roundtrip save/load failures write
+`reflect_demo: FAIL roundtrip <error Display>`; final script serialization
+failures write `reflect_demo: FAIL script <error Display>`, also exiting 1.
+Output write failures follow the shared stderr diagnostic rule. No mode writes
+files, including when a script contains `save`.
 
 ## Glue proof, watch and fault injection (to be written by R10)

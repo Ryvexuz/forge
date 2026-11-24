@@ -1,0 +1,9 @@
+reflect value 1
+type Vehicle version=2 hash=8b1bd5d2c9f51001
+name = "Edited"
+mass_kg = 1500.0
+position = [0.0,0.5,-2.25]
+wheels = [{radius_m=0.34,width_m=0.22,steered=false},{radius_m=0.33,width_m=0.23,steered=false}]
+note = none
+drive = Front
+end

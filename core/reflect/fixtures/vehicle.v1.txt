@@ -1,0 +1,9 @@
+reflect value 1
+type Vehicle version=1 hash=0000000000000000
+name = "Old"
+mass = 1234.5
+position = [1.0,0.0,2.0]
+wheels = [{radius_m=0.3,width_m=0.2,steered=true}]
+colour = "red"
+note = none
+end

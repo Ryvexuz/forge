@@ -38,9 +38,6 @@ fn demo_args_usage_errors() {
             "--watch",
         ],
         &["--expect-schema", "Vehicle", "fixtures/missing.txt"],
-        &["--roundtrip", "Vehicle", "fixtures/vehicle.v2.txt"],
-        &["--load", "Wheel", "fixtures/vehicle.v1.txt"],
-        &["--script", "edit.script", "edit.expected.txt"],
         &["--glue-proof"],
         &["--watch"],
         &["--inject-fault"],
@@ -52,7 +49,6 @@ fn demo_args_usage_errors() {
         assert!(err.starts_with("reflect_demo: usage: "), "{err}");
         assert_eq!(err.lines().count(), 1, "{err}");
         let stage = match args.first().copied() {
-            Some("--roundtrip" | "--load" | "--script") => Some("R9b"),
             Some("--glue-proof" | "--watch" | "--inject-fault") => Some("R10"),
             _ => None,
         };
