@@ -1,0 +1,13 @@
+schema=1
+kind=subgraph
+nodes
+0,image.invert,0,0,
+1,image.blur,0,80,
+2,image.blend,160,40,factor=0.5
+edges
+0.out,2.a
+1.out,2.b
+exports
+out,2.out,out
+src_a,0.a,in
+src_b,1.a,in

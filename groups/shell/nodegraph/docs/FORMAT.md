@@ -107,3 +107,26 @@ type mismatches, occupied inputs and cycles.
    unreadable file.
 4. Derive kind from exports: Graph has no graph/subgraph flag. Nonempty exports
    mean subgraph with an exports section; otherwise graph without one.
+
+## Subgraph assets
+
+An asset is a graph with nonempty exports including at least one output.
+Exported input ports must have no source inside the asset.
+`save_asset` writes the same canonical `kind=subgraph` text described above.
+An instance has type `asset/<path>` and one Int parameter, `instance`.
+Keys must be unique per asset type within a graph. Inputs and outputs follow
+export-name order and retain the exported ports' types.
+Each key owns a private graph, input feeders and inner evaluator/cache; the
+outer evaluator is unchanged. Equal input values do not update feeders.
+Paths are relative to the caller's base folder, never stored absolute.
+They must be nonempty, end in `.bsg`, satisfy `text_allowed`, contain no `=`,
+and not start with `/`. Slash-separated components cannot be empty, `.` or
+`..`; backslashes and drive letters are forbidden by `text_allowed`.
+Every path is checked before reading. An explicit-stack dependency walk
+rejects recursion before building assets children-first. `MAX_DEPTH = 8` is
+the framework nesting setting; a direct asset is depth one. Exceeding it is
+`TooDeep`, never truncation. Instance keys need room for an Int successor.
+Reload validates a replacement before swapping it, refuses changed ports,
+clears instance caches, and invalidates only direct instances (their readers
+become dirty through evaluator stamps). Failure leaves the old asset intact.
+Reloading an asset nested inside another asset is not supported.
