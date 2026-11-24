@@ -84,6 +84,10 @@ fn no_fixture_names_in_generic_modules() {
         ["Vehicle", "VehicleWide", "Wheel"]
     );
     assert!(!words("prefixVehicle Vehicle_suffix").contains(&"Vehicle".to_owned()));
+    let wide_only = words("VehicleWide");
+    assert!(wide_only.contains(&"VehicleWide".to_owned()));
+    assert!(!wide_only.contains(&"Vehicle".to_owned()));
+    assert!(words("a Vehicle.").contains(&"Vehicle".to_owned()));
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
     for module in [
         "text",
