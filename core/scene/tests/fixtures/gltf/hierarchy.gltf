@@ -1,0 +1,24 @@
+{
+  "asset": {"version": "2.0", "generator": "broadsword forge fixture"},
+  "scene": 0,
+  "scenes": [{"nodes": [0]}],
+  "nodes": [
+    {"name": "root", "children": [1, 2], "translation": [1.0, 2.0, 3.0], "rotation": [0.5, 0.5, 0.5, 0.5], "scale": [2.0, 2.0, 2.0]},
+    {"name": "left", "mesh": 0, "translation": [-1.5, 0.0, 0.0], "rotation": [0.5, -0.5, 0.5, 0.5], "scale": [1.0, 0.5, 0.25]},
+    {"name": "right", "mesh": 0, "translation": [1.5, 0.0, 0.0], "rotation": [-0.5, 0.5, 0.5, 0.5], "scale": [0.5, 0.5, 0.5]}
+  ],
+  "meshes": [
+    {"name": "triangle", "primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "mode": 4}]}
+  ],
+  "accessors": [
+    {"bufferView": 0, "byteOffset": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [-0.5, 0.0, -0.75], "max": [0.5, 1.0, 0.25]},
+    {"bufferView": 1, "byteOffset": 0, "componentType": 5123, "count": 3, "type": "SCALAR"}
+  ],
+  "bufferViews": [
+    {"buffer": 0, "byteOffset": 0, "byteLength": 36, "target": 34962},
+    {"buffer": 0, "byteOffset": 36, "byteLength": 6, "target": 34963}
+  ],
+  "buffers": [
+    {"uri": "hierarchy.bin", "byteLength": 44}
+  ]
+}
