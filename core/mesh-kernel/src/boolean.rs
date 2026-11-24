@@ -1,10 +1,10 @@
 //! Boolean composition of closed meshes, with exact-coordinate welding.
 
 use crate::broadphase::candidate_pairs;
-use crate::classify::{classify_faces, Side};
+use crate::classify::{classify_regions, Side};
 use crate::halfedge::{Mesh, MeshError};
 use crate::intersect::{intersect_triangles, Intersection, IntersectionError};
-use crate::split::{split_faces, SplitError};
+use crate::split::{split_faces_with_seams, SplitError};
 use crate::vec3::Vec3;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -131,16 +131,16 @@ fn compose(a: &Mesh, b: &Mesh, operation: Operation) -> Result<Mesh, BooleanErro
             cuts_b[face_b as usize].push(cut);
         }
     }
-    let split_a = split_faces(a, &cuts_a).map_err(|error| BooleanError::Split {
+    let (split_a, seams_a) = split_faces_with_seams(a, &cuts_a).map_err(|err| BooleanError::Split {
         operand: Operand::A,
-        error,
+        error: err,
     })?;
-    let split_b = split_faces(b, &cuts_b).map_err(|error| BooleanError::Split {
+    let (split_b, seams_b) = split_faces_with_seams(b, &cuts_b).map_err(|err| BooleanError::Split {
         operand: Operand::B,
-        error,
+        error: err,
     })?;
-    let sides_a = classify_faces(&split_a, b);
-    let sides_b = classify_faces(&split_b, a);
+    let sides_a = classify_regions(&split_a, &seams_a, b);
+    let sides_b = classify_regions(&split_b, &seams_b, a);
     let mut vertices = Vec::new();
     let mut triangles = Vec::new();
     let mut indices = BTreeMap::new();

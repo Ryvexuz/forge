@@ -194,6 +194,15 @@ fn input_triangles(mesh: &Mesh) -> Result<Vec<Triangle>, SplitError> {
 /// `InconsistentEdgePoint` or `BadTriangle`, rather than snapping or cracking.
 /// Making rounded points consistent belongs to M11 or a later follow-up.
 pub fn split_faces(mesh: &Mesh, cuts: &[Vec<Intersection>]) -> Result<Mesh, SplitError> {
+    split_faces_with_seams(mesh, cuts).map(|(mesh, _)| mesh)
+}
+
+/// Like `split_faces`, also returning every recovered cut edge,
+/// as `[min, max]` output vertex indices.
+pub fn split_faces_with_seams(
+    mesh: &Mesh,
+    cuts: &[Vec<Intersection>],
+) -> Result<(Mesh, BTreeSet<[usize; 2]>), SplitError> {
     if cuts.len() != mesh.faces.len() {
         return Err(SplitError::CutCountMismatch {
             faces: mesh.faces.len(),
@@ -293,6 +302,7 @@ pub fn split_faces(mesh: &Mesh, cuts: &[Vec<Intersection>]) -> Result<Mesh, Spli
         charts.push(chart);
     }
     let mut output = Vec::new();
+    let mut seams = BTreeSet::new();
     for (face, &t) in input.iter().enumerate() {
         let chart = &charts[face];
         let mut local_points = points[face].clone();
@@ -364,6 +374,7 @@ pub fn split_faces(mesh: &Mesh, cuts: &[Vec<Intersection>]) -> Result<Mesh, Spli
             }
         }
         recover(&mut local, &constraints, chart)?;
+        seams.extend(constraints.iter().map(|&(a, b)| [a, b]));
         if local.len() == 1 && local[0] == t {
             output.push(t);
         } else {
@@ -373,7 +384,8 @@ pub fn split_faces(mesh: &Mesh, cuts: &[Vec<Intersection>]) -> Result<Mesh, Spli
             }
         }
     }
-    Mesh::from_triangles(vertices, &output).map_err(SplitError::Mesh)
+    let mesh = Mesh::from_triangles(vertices, &output).map_err(SplitError::Mesh)?;
+    Ok((mesh, seams))
 }
 
 fn split_edge(local: &mut Vec<Triangle>, e: Edge, p: usize, face: usize) -> Result<(), SplitError> {

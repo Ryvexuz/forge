@@ -3,6 +3,7 @@
 
 use crate::halfedge::Mesh;
 use crate::predicates::{orient2d, orient3d};
+use std::collections::{BTreeMap, BTreeSet};
 
 type Point = [f64; 3];
 type Triangle = [Point; 3];
@@ -27,21 +28,102 @@ pub fn classify_faces(mesh: &Mesh, solid: &Mesh) -> Vec<Side> {
     let targets = triangles(solid);
     triangles(mesh)
         .into_iter()
+        .map(|face| classify_one(face, &targets))
+        .collect()
+}
+
+fn classify_one(face: Triangle, targets: &[Triangle]) -> Side {
+    let point = std::array::from_fn(|axis| {
+        let values = face.map(|p| p[axis]);
+        if values[0] == values[1] && values[1] == values[2] {
+            return values[0];
+        }
+        let scale = values.iter().fold(0.0_f64, |s, v| s.max(v.abs()));
+        if scale == 0.0 {
+            return 0.0;
+        }
+        // Normalize before summing, including for subnormal inputs.
+        let mean = values.iter().map(|v| v / scale).sum::<f64>() / 3.0;
+        mean.clamp(-1.0, 1.0) * scale
+    });
+    classify(point, face, targets)
+}
+
+fn root(parents: &mut [usize], mut face: usize) -> usize {
+    while parents[face] != face {
+        parents[face] = parents[parents[face]];
+        face = parents[face];
+    }
+    face
+}
+
+/// Region id of each face: faces joined across shared undirected edges that are not seams,
+/// ids numbered 0.. in order of each region's lowest face index.
+///
+/// Requires valid triangle topology, as produced by `Mesh::from_triangles`.
+/// Seam indices must be canonical `[min, max]` mesh vertex indices.
+pub fn face_regions(mesh: &Mesh, seams: &BTreeSet<[usize; 2]>) -> Vec<usize> {
+    let mut parents: Vec<_> = (0..mesh.faces.len()).collect();
+    let mut ranks = vec![0; mesh.faces.len()];
+    let mut edges = BTreeMap::new();
+    for h in &mesh.halfedges {
+        let a = h.origin;
+        let b = mesh.halfedges[h.next].origin;
+        let edge = [a.min(b), a.max(b)];
+        if seams.contains(&edge) {
+            continue;
+        }
+        if let Some(other) = edges.insert(edge, h.face) {
+            let mut left = root(&mut parents, h.face);
+            let mut right = root(&mut parents, other);
+            if left == right {
+                continue;
+            }
+            if ranks[left] < ranks[right] {
+                std::mem::swap(&mut left, &mut right);
+            }
+            parents[right] = left;
+            if ranks[left] == ranks[right] {
+                ranks[left] += 1;
+            }
+        }
+    }
+    let mut ids = vec![usize::MAX; parents.len()];
+    let mut count = 0;
+    (0..parents.len())
         .map(|face| {
-            let point = std::array::from_fn(|axis| {
-                let values = face.map(|p| p[axis]);
-                if values[0] == values[1] && values[1] == values[2] {
-                    return values[0];
-                }
-                let scale = values.iter().fold(0.0_f64, |s, v| s.max(v.abs()));
-                if scale == 0.0 {
-                    return 0.0;
-                }
-                // Normalize before summing, including for subnormal inputs.
-                let mean = values.iter().map(|v| v / scale).sum::<f64>() / 3.0;
-                mean.clamp(-1.0, 1.0) * scale
-            });
-            classify(point, face, &targets)
+            let parent = root(&mut parents, face);
+            if ids[parent] == usize::MAX {
+                ids[parent] = count;
+                count += 1;
+            }
+            ids[parent]
+        })
+        .collect()
+}
+
+/// The same sides as `classify_faces`, computed once per region (on its lowest-index face).
+///
+/// Requires the inputs of `classify_faces` and canonical, complete cut seams.
+/// A seam is every edge on which a cut segment lies. Every place where the
+/// surface meets the other solid's surface is covered by cut segments:
+/// transverse crossings, touching along an edge, and the boundary of every
+/// coplanar overlap, which `CoplanarOverlap` gives as a polygon. Two faces
+/// sharing a non-seam edge therefore lie on the same side, so a region has
+/// one side. Extra seam edges can only make regions smaller, never wrong;
+/// missing seam edges can merge different sides and violate this precondition.
+pub fn classify_regions(mesh: &Mesh, seams: &BTreeSet<[usize; 2]>, solid: &Mesh) -> Vec<Side> {
+    let targets = triangles(solid);
+    let regions = face_regions(mesh, seams);
+    let mut sides = Vec::new();
+    triangles(mesh)
+        .into_iter()
+        .zip(regions)
+        .map(|(face, region)| {
+            if region == sides.len() {
+                sides.push(classify_one(face, &targets));
+            }
+            sides[region]
         })
         .collect()
 }
