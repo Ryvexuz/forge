@@ -131,13 +131,13 @@ fn compose(a: &Mesh, b: &Mesh, operation: Operation) -> Result<Mesh, BooleanErro
             cuts_b[face_b as usize].push(cut);
         }
     }
-    let (split_a, seams_a) = split_faces_with_seams(a, &cuts_a).map_err(|err| BooleanError::Split {
+    let (split_a, seams_a) = split_faces_with_seams(a, &cuts_a).map_err(|error| BooleanError::Split {
         operand: Operand::A,
-        error: err,
+        error,
     })?;
-    let (split_b, seams_b) = split_faces_with_seams(b, &cuts_b).map_err(|err| BooleanError::Split {
+    let (split_b, seams_b) = split_faces_with_seams(b, &cuts_b).map_err(|error| BooleanError::Split {
         operand: Operand::B,
-        error: err,
+        error,
     })?;
     let sides_a = classify_regions(&split_a, &seams_a, b);
     let sides_b = classify_regions(&split_b, &seams_b, a);
