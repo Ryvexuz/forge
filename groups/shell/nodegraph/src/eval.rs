@@ -7,6 +7,8 @@
 //! There is no early cutoff: even an unchanged result receives a fresh stamp.
 //! One evaluator serves one graph; call `clear` before using another graph,
 //! including a clone edited independently. Both walks are iterative.
+//! Cache pruning happens once per graph version; the one-graph rule and
+//! clearing between graphs also keep pruning correct.
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::panic::{catch_unwind, AssertUnwindSafe};
@@ -72,6 +74,7 @@ struct Entry {
 #[derive(Default)]
 pub struct Evaluator {
     cache: BTreeMap<NodeId, Entry>,
+    pruned_at: Option<u64>,
     next_stamp: u64,
     stats: EvalStats,
     force_full: bool,
@@ -114,7 +117,10 @@ impl Evaluator {
         registry: &KindRegistry,
         output: (NodeId, &str),
     ) -> Result<Value, EvalError> {
-        self.cache.retain(|id, _| graph.node(*id).is_some());
+        if self.pruned_at != Some(graph.version()) {
+            self.cache.retain(|id, _| graph.node(*id).is_some());
+            self.pruned_at = Some(graph.version());
+        }
         let node = graph
             .node(output.0)
             .ok_or(EvalError::UnknownNode(output.0))?;
@@ -268,6 +274,7 @@ impl Evaluator {
     /// Drops all results, retaining statistics and the force-full setting.
     pub fn clear(&mut self) {
         self.cache.clear();
+        self.pruned_at = None;
         self.next_stamp = 0;
     }
 
