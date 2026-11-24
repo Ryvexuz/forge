@@ -109,23 +109,23 @@ macro_rules! __reflect_attrs {
     ($desc:expr, $ty:ty; label = $value:expr $(, $($rest:tt)*)?) => {{
         let mut field = $desc;
         let value: &str = $value;
-        field.label = Some(value.to_string());
+        field.label = ::core::option::Option::Some(value.to_string());
         $crate::__reflect_attrs!(field, $ty; $($($rest)*)?)
     }};
     ($desc:expr, $ty:ty; unit = $value:expr $(, $($rest:tt)*)?) => {{
         let mut field = $desc;
         let value: &str = $value;
-        field.unit = Some(value.to_string());
+        field.unit = ::core::option::Option::Some(value.to_string());
         $crate::__reflect_attrs!(field, $ty; $($($rest)*)?)
     }};
     ($desc:expr, $ty:ty; min = $value:expr $(, $($rest:tt)*)?) => {{
         let mut field = $desc;
-        field.min = Some($value);
+        field.min = ::core::option::Option::Some($value);
         $crate::__reflect_attrs!(field, $ty; $($($rest)*)?)
     }};
     ($desc:expr, $ty:ty; max = $value:expr $(, $($rest:tt)*)?) => {{
         let mut field = $desc;
-        field.max = Some($value);
+        field.max = ::core::option::Option::Some($value);
         $crate::__reflect_attrs!(field, $ty; $($($rest)*)?)
     }};
     ($desc:expr, $ty:ty; readonly $(, $($rest:tt)*)?) => {{
@@ -141,13 +141,13 @@ macro_rules! __reflect_attrs {
     ($desc:expr, $ty:ty; default = $value:expr $(, $($rest:tt)*)?) => {{
         let mut field = $desc;
         let value: $ty = $value;
-        field.default = Some(<$ty as $crate::macros::Field>::to_value(&value));
+        field.default = ::core::option::Option::Some(<$ty as $crate::macros::Field>::to_value(&value));
         $crate::__reflect_attrs!(field, $ty; $($($rest)*)?)
     }};
     ($desc:expr, $ty:ty; renamed_from = $value:expr $(, $($rest:tt)*)?) => {{
         let mut field = $desc;
         let value: &str = $value;
-        field.renamed_from = Some(value.to_string());
+        field.renamed_from = ::core::option::Option::Some(value.to_string());
         $crate::__reflect_attrs!(field, $ty; $($($rest)*)?)
     }};
     ($desc:expr, $ty:ty; since = $value:expr $(, $($rest:tt)*)?) => {{
@@ -156,7 +156,7 @@ macro_rules! __reflect_attrs {
         $crate::__reflect_attrs!(field, $ty; $($($rest)*)?)
     }};
     ($desc:expr, $ty:ty; $unknown:ident $($rest:tt)*) => {
-        compile_error!(concat!("reflect!: unknown field attribute ", stringify!($unknown)))
+        ::core::compile_error!(::core::concat!("reflect!: unknown field attribute ", ::core::stringify!($unknown)))
     };
 }
 
@@ -186,57 +186,57 @@ macro_rules! reflect {
                     $(<$ty as $crate::macros::Field>::to_value(&self.$field)),*
                 ])
             }
-            fn from_value(value: $crate::value::Value) -> Option<Self> {
+            fn from_value(value: $crate::value::Value) -> ::core::option::Option<Self> {
                 if let $crate::value::Value::Struct(values) = value {
                     let mut values = values.into_iter();
                     let result = Self {
                         $($field: <$ty as $crate::macros::Field>::from_value(values.next()?)?),*
                     };
-                    if values.next().is_some() { None } else { Some(result) }
+                    if values.next().is_some() { ::core::option::Option::None } else { ::core::option::Option::Some(result) }
                 } else {
-                    None
+                    ::core::option::Option::None
                 }
             }
         }
 
         impl $crate::desc::Reflect for $name {
             fn desc() -> $crate::desc::TypeDesc {
-                $crate::desc::TypeDesc::new(stringify!($name), $version, ::std::vec![
+                $crate::desc::TypeDesc::new(::core::stringify!($name), $version, ::std::vec![
                     $($crate::__reflect_attrs!(
                         $crate::desc::FieldDesc::new(
-                            stringify!($field), <$ty as $crate::macros::Field>::kind()
+                            ::core::stringify!($field), <$ty as $crate::macros::Field>::kind()
                         ), $ty; $($($attrs)*)?
                     )),*
-                ]).expect(concat!("reflect!: invalid descriptor for ", stringify!($name)))
+                ]).expect(::core::concat!("reflect!: invalid descriptor for ", ::core::stringify!($name)))
             }
             fn dyn_desc(&self) -> $crate::desc::TypeDesc {
                 <Self as $crate::desc::Reflect>::desc()
             }
-            fn get(&self, index: usize) -> Option<$crate::value::Value> {
-                let names: &[&str] = &[$(stringify!($field)),*];
+            fn get(&self, index: usize) -> ::core::option::Option<$crate::value::Value> {
+                let names: &[&str] = &[$(::core::stringify!($field)),*];
                 match names.get(index).copied() {
-                    $(Some(stringify!($field)) =>
-                        Some(<$ty as $crate::macros::Field>::to_value(&self.$field)),)*
-                    _ => None,
+                    $(::core::option::Option::Some(::core::stringify!($field)) =>
+                        ::core::option::Option::Some(<$ty as $crate::macros::Field>::to_value(&self.$field)),)*
+                    _ => ::core::option::Option::None,
                 }
             }
             fn set(
                 &mut self, index: usize, value: $crate::value::Value,
-            ) -> Result<(), $crate::desc::SetError> {
-                let names: &[&str] = &[$(stringify!($field)),*];
+            ) -> ::core::result::Result<(), $crate::desc::SetError> {
+                let names: &[&str] = &[$(::core::stringify!($field)),*];
                 match (names.get(index).copied(), value) {
-                    $((Some(stringify!($field)), value) => {
+                    $((::core::option::Option::Some(::core::stringify!($field)), value) => {
                         let got = value.kind_name();
                         let converted = <$ty as $crate::macros::Field>::from_value(value)
                             .ok_or_else(|| $crate::desc::SetError::WrongKind {
-                                field: stringify!($field).to_string(),
+                                field: ::core::stringify!($field).to_string(),
                                 expected: <$ty as $crate::macros::Field>::kind().name(),
                                 got,
                             })?;
                         self.$field = converted;
-                        Ok(())
+                        ::core::result::Result::Ok(())
                     },)*
-                    _ => Err($crate::desc::SetError::NoField { index, count: names.len() }),
+                    _ => ::core::result::Result::Err($crate::desc::SetError::NoField { index, count: names.len() }),
                 }
             }
         }
@@ -248,22 +248,22 @@ macro_rules! reflect {
         impl $crate::macros::Field for $name {
             fn kind() -> $crate::desc::Kind {
                 $crate::desc::Kind::Enum {
-                    name: stringify!($name).to_string(),
-                    variants: ::std::vec![$(stringify!($variant).to_string()),+],
+                    name: ::core::stringify!($name).to_string(),
+                    variants: ::std::vec![$(::core::stringify!($variant).to_string()),+],
                 }
             }
             fn to_value(&self) -> $crate::value::Value {
                 $crate::value::Value::Enum(match self {
-                    $(Self::$variant => stringify!($variant)),+
+                    $(Self::$variant => ::core::stringify!($variant)),+
                 }.to_string())
             }
-            fn from_value(value: $crate::value::Value) -> Option<Self> {
+            fn from_value(value: $crate::value::Value) -> ::core::option::Option<Self> {
                 match value {
                     $crate::value::Value::Enum(name) => match name.as_str() {
-                        $(stringify!($variant) => Some(Self::$variant),)+
-                        _ => None,
+                        $(::core::stringify!($variant) => ::core::option::Option::Some(Self::$variant),)+
+                        _ => ::core::option::Option::None,
                     },
-                    _ => None,
+                    _ => ::core::option::Option::None,
                 }
             }
         }
