@@ -63,3 +63,18 @@ For the required mutation proof, temporarily add a dependency assignment under
 `cargo_toml_has_no_dependencies` fails. Restore the manifest and rerun the
 command. This mutation has not been executed in the sandbox; helper-level
 regressions also exercise dependency and panic mutations without editing files.
+
+## C ABI
+
+The earlier skeleton's FFI placeholders are now implemented by `capi` and
+`include/nodegraph.h`: the in-process, version-1 C interface.
+Handles are generation-checked indices into a process-wide table, not pointers;
+callers keep them thread-bound. Built-in registries and last errors are per-thread.
+Zero is success; negative `NG_ERR_*` codes name failures. Text is UTF-8 plus length.
+Buffer size queries report the required length without partially copying data.
+Every export catches Rust panics: nothing unwinds across the C boundary when
+Rust uses unwinding panics. `panic=abort` cannot be caught and is not supported.
+Foreign unwinds into Rust are out of scope (R7).
+Unsafe pointer access is confined to `src/capi.rs`; callers must supply valid,
+aligned allocations of the declared lengths and non-overlapping output storage.
+This task does not build a shared library or require a C compiler.
