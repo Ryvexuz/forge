@@ -1,5 +1,6 @@
 //! Commands are the only writer of the owned graph; callers receive read access.
-//! Removal checks identity and exports before disconnecting outgoing edges, then
+//! Removal checks identity, that the editor's registry knows the node's type (so
+//! undo can rebuild it), and exports before disconnecting outgoing edges, then
 //! removes the node and records incoming edges. Undo restores the node, incoming
 //! edges, then outgoing edges. Removal and its undo commit only on full success.
 //! Grouping copies selected nodes and internal edges, exports every open or
@@ -103,7 +104,8 @@ struct RemoveNode<'r> {
 
 impl Command<Graph, EditError> for RemoveNode<'_> {
     fn apply(&mut self, graph: &mut Graph) -> Result<(), EditError> {
-        graph.node(self.id).ok_or(GraphError::UnknownNode(self.id))?;
+        let node = graph.node(self.id).ok_or(GraphError::UnknownNode(self.id))?;
+        self.registry.lookup(&node.type_name).map_err(GraphError::Kind)?;
         if let Some((name, _)) = graph.exports().iter().find(|(_, e)| e.node == self.id) {
             return Err(GraphError::NodeExported {
                 node: self.id,

@@ -557,3 +557,49 @@ fn editor_input_selects_drags_and_deletes() {
     handle(&mut editor, &[EditorInput::Key(Key::ClearSelection)]);
     assert!(editor.selection().is_empty());
 }
+
+#[test]
+fn remove_node_refuses_a_type_the_registry_lacks() {
+    use nodegraph::kind::NodeError;
+
+    let full = registry();
+    let mut graph = Graph::new();
+    let a = graph
+        .add_node(&full, "math.constant", vec![Value::F64(1.0)], pos(0.0, 0.0))
+        .unwrap();
+    let b = graph
+        .add_node(&full, "math.add", vec![], pos(50.0, 0.0))
+        .unwrap();
+    graph.connect(a, "out", b, "a").unwrap();
+    let empty = KindRegistry::new();
+    let mut editor = Editor::with_graph(&empty, graph.clone());
+    editor.select(a, false).unwrap();
+    editor.select(b, true).unwrap();
+    let selection = editor.selection().clone();
+
+    assert_eq!(
+        editor.remove_node(a),
+        Err(EditError::Graph(GraphError::Kind(NodeError::UnknownType(
+            "math.constant".into()
+        ))))
+    );
+    same_graph(editor.graph(), &graph, 0);
+    assert_eq!((editor.undo_len(), editor.redo_len()), (0, 0));
+    assert_eq!(editor.selection(), &selection);
+
+    assert_eq!(
+        editor.remove_node(b),
+        Err(EditError::Graph(GraphError::Kind(NodeError::UnknownType(
+            "math.add".into()
+        ))))
+    );
+    same_graph(editor.graph(), &graph, 0);
+    assert_eq!((editor.undo_len(), editor.redo_len()), (0, 0));
+    assert_eq!(editor.selection(), &selection);
+
+    let mut editor2 = Editor::with_graph(&full, graph.clone());
+    assert_eq!(editor2.remove_node(b), Ok(()));
+    assert_eq!(editor2.undo_len(), 1);
+    assert_eq!(editor2.undo(), Ok(true));
+    same_graph(editor2.graph(), &graph, 0);
+}
