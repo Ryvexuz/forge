@@ -108,12 +108,15 @@ fn unsupported(line: usize, param: &str) -> FormatError {
 fn refuses(text: &str, expected: FormatError) {
     let registry = registry();
     assert_eq!(parse(text, &registry), Err(expected), "input: {text:?}");
-    assert!(parse(&fixture(), &registry).is_ok(), "fixture after refusal");
+    assert!(
+        parse(&fixture(), &registry).is_ok(),
+        "fixture after refusal"
+    );
 }
 
 #[test]
 fn graph_file_round_trip_byte_identical() {
-    use Value::{Bool, F64, Int, Text};
+    use Value::{Bool, Int, Text, F64};
     let registry = registry();
     let fixture = fixture();
     let parsed = parse(&fixture, &registry).unwrap();
@@ -172,7 +175,9 @@ fn graph_file_round_trip_byte_identical() {
         (8, 9, "a"),
         (12, 13, "in"),
     ] {
-        built.connect(NodeId(from), "out", NodeId(to), port).unwrap();
+        built
+            .connect(NodeId(from), "out", NodeId(to), port)
+            .unwrap();
     }
     assert_eq!(parsed, built);
     assert_eq!(write(&parsed).unwrap(), fixture);
@@ -346,7 +351,10 @@ fn graph_file_rejects_bad_input() {
     );
     // Large hostile Text is validated, not truncated into an acceptable prefix.
     let hostile = format!("{}\\", "a".repeat(65_536));
-    refuses(&fixture.replace("naïve = ok", &hostile), bad_name(14, &hostile));
+    refuses(
+        &fixture.replace("naïve = ok", &hostile),
+        bad_name(14, &hostile),
+    );
 }
 
 #[test]

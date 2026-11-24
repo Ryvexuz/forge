@@ -10,38 +10,16 @@ pub const SCHEMA: u32 = 1;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum FormatError {
     MissingFinalNewline,
-    CarriageReturn {
-        line: usize,
-    },
-    EmptyLine {
-        line: usize,
-    },
-    UnknownVersion {
-        found: String,
-    },
-    BadHeader {
-        line: usize,
-    },
-    BadField {
-        line: usize,
-        field: &'static str,
-    },
-    BadName {
-        line: usize,
-        text: String,
-    },
-    Unsupported {
-        line: usize,
-        param: String,
-    },
+    CarriageReturn { line: usize },
+    EmptyLine { line: usize },
+    UnknownVersion { found: String },
+    BadHeader { line: usize },
+    BadField { line: usize, field: &'static str },
+    BadName { line: usize, text: String },
+    Unsupported { line: usize, param: String },
     NoExports,
-    Graph {
-        line: usize,
-        error: GraphError,
-    },
-    NotCanonical {
-        line: usize,
-    },
+    Graph { line: usize, error: GraphError },
+    NotCanonical { line: usize },
 }
 
 impl std::fmt::Display for FormatError {
@@ -156,7 +134,8 @@ fn number<T: std::str::FromStr>(
     line: usize,
     field: &'static str,
 ) -> Result<T, FormatError> {
-    text.parse().map_err(|_| FormatError::BadField { line, field })
+    text.parse()
+        .map_err(|_| FormatError::BadField { line, field })
 }
 
 fn fields(text: &str, count: usize, line: usize) -> Result<Vec<&str>, FormatError> {
@@ -186,10 +165,12 @@ fn parse_node(
         x: number(cols[2], line, "x")?,
         y: number(cols[3], line, "y")?,
     };
-    let kind = registry.lookup(cols[1]).map_err(|error| FormatError::Graph {
-        line,
-        error: GraphError::Kind(error),
-    })?;
+    let kind = registry
+        .lookup(cols[1])
+        .map_err(|error| FormatError::Graph {
+            line,
+            error: GraphError::Kind(error),
+        })?;
     let bad_param = || FormatError::BadField {
         line,
         field: "param",
