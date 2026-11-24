@@ -8,6 +8,9 @@ use reflect::{inspector, schema, script::run_script};
 use std::io::Write;
 use std::path::{Component, Path};
 
+#[path = "reflect_demo/watch.rs"]
+pub mod watch;
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Mode {
     ExpectSchema { ty: String, file: String },
@@ -82,10 +85,10 @@ fn execute(args: &[String], root: &Path, out: &mut dyn Write) -> Result<u8, Stri
         Mode::Roundtrip { ty, file } => return roundtrip(&ty, &file, root, out),
         Mode::Load { ty, file } => return load(&ty, &file, root, out),
         Mode::Script { file, expected } => return script(&file, &expected, root, out),
+        Mode::Watch => return watch::run(out),
         other => {
             let (flag, stage) = match other {
                 Mode::GlueProof => ("--glue-proof", "R10"),
-                Mode::Watch => ("--watch", "R10"),
                 Mode::InjectFault => ("--inject-fault", "R10"),
                 _ => return Err("usage: invalid mode".into()),
             };

@@ -358,3 +358,33 @@ Output write failures follow the shared stderr diagnostic rule. No mode writes
 files, including when a script contains `save`.
 
 ## Glue proof, watch and fault injection (to be written by R10)
+
+### Watch (R10c-1)
+
+`--watch` takes no values and writes no files. The demo starts a Vehicle at
+mass 1200.0 before registering journals a and b in one FanOut, in that order.
+Using configured limits and `set_path`, it sets mass to 1350.0, wheel 0 radius
+to 0.33, mass to 6000.0 (refused, above the maximum 5000.0), and wheel 1 steered
+to true. The refused set leaves mass at 1350.0 and produces no event.
+
+PASS requires accepted=3, rejected=1, equal journals of length 3, final mass
+1350.0, and first path `mass_kg`. Otherwise the summary says FAIL and exits 1;
+PASS exits 0. Setup or output errors use the shared stderr diagnostic rule.
+Events are printed after the sets, pairing a then b for each journal position.
+Paths have the script root prefix `vehicle.`. Floats use Rust Debug tokens,
+booleans use `true` or `false`, and other value kinds are errors.
+
+```text
+watch Vehicle sets=4 accepted=3 rejected=1 events=3 first="vehicle.mass_kg 1200.0 -> 1350.0" result=PASS
+event 1 watcher=a path=vehicle.mass_kg old=1200.0 new=1350.0
+event 1 watcher=b path=vehicle.mass_kg old=1200.0 new=1350.0
+event 2 watcher=a path=vehicle.wheels[0].radius_m old=0.31 new=0.33
+event 2 watcher=b path=vehicle.wheels[0].radius_m old=0.31 new=0.33
+event 3 watcher=a path=vehicle.wheels[1].steered old=false new=true
+event 3 watcher=b path=vehicle.wheels[1].steered old=false new=true
+```
+
+#### Plan corrections
+
+Check 1.6.8's `1200 -> 1350` predates the Value text rule: the exact first
+change is `1200.0 -> 1350.0`, using finite-float Debug tokens.
