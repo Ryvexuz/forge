@@ -33,3 +33,11 @@ crate::reflect! {
         pub drive: DriveMode,
     }
 }
+
+/// Registers the built-in examples in their public enumeration order.
+pub fn register_samples(
+    registry: &mut crate::registry::Registry,
+) -> Result<(), crate::registry::RegistryError> {
+    registry.register::<Vehicle>()?;
+    registry.register::<Wheel>()
+}
