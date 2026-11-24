@@ -1,10 +1,13 @@
-//! M11 exact dyadic fixtures: 768 triangles per overlapping box.
-//! The 100,000-triangle plan size needs the M11b follow-up.
+//! M11c plan-named volume and watertight tests use 100,000 gen triangles per box.
+//! The dyadic_768 tests and remaining tests retain the exact dyadic fixtures.
 
 use mesh_kernel::boolean::{difference, intersection, union, watertight_gate, BooleanError, Operand};
+use mesh_kernel::gen;
 use mesh_kernel::halfedge::Mesh;
 use mesh_kernel::vec3::Vec3;
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::OnceLock;
+use std::time::Instant;
 
 const RELATIVE_VOLUME_ERROR: f64 = 1e-9;
 type BooleanOp = fn(&Mesh, &Mesh) -> Result<Mesh, BooleanError>;
@@ -115,8 +118,68 @@ fn components(mesh: &Mesh) -> usize {
         .len()
 }
 
+const OFFSET: [f64; 3] = [0.3, 0.2, 0.1];
+
+fn plan_results() -> &'static [(&'static str, Mesh); 3] {
+    static RESULTS: OnceLock<[(&str, Mesh); 3]> = OnceLock::new();
+    RESULTS.get_or_init(|| {
+        let convert = |fixture: gen::Mesh, offset: [f64; 3]| {
+            Mesh::from_triangles(
+                fixture
+                    .vertices
+                    .into_iter()
+                    .map(|[x, y, z]| Vec3::new(x + offset[0], y + offset[1], z + offset[2]))
+                    .collect(),
+                &fixture.triangles,
+            )
+            .unwrap()
+        };
+        let a = convert(gen::closed_box_with_triangles(100_000).unwrap(), [0.0; 3]);
+        let b = convert(gen::closed_box_with_triangles(100_000).unwrap(), OFFSET);
+        for (name, input) in [("A", &a), ("B", &b)] {
+            assert_eq!(input.faces.len(), 100_000, "{name}: input faces");
+            assert!(input.is_watertight(), "{name}: input watertight");
+        }
+        OPERATIONS.map(|(name, operation)| {
+            let start = Instant::now();
+            let result = operation(&a, &b).unwrap_or_else(|e| panic!("{name}: {e}"));
+            println!(
+                "m11c {name} tris={} elapsed={:?}",
+                result.faces.len(),
+                start.elapsed()
+            );
+            (name, result)
+        })
+    })
+}
+
 #[test]
 fn boolean_union_volume_reference() {
+    let overlap = 1.7 * 1.8 * 1.9;
+    let expected = [8.0 + 8.0 - overlap, overlap, 8.0 - overlap];
+    for ((name, result), expected) in plan_results().iter().zip(expected) {
+        // Keep the operation visible if the unchanged signed-volume assertion fails.
+        println!("m9 {name}: expected={expected}");
+        assert_volume(result, expected);
+    }
+}
+
+#[test]
+fn boolean_result_watertight() {
+    for (name, result) in plan_results() {
+        assert!(result.is_watertight(), "{name}");
+        assert_eq!(result.euler_characteristic(), 2, "{name}: genus zero");
+        assert_eq!(components(result), 1, "{name}");
+        for p in &result.vertices {
+            assert!((-1.0..=1.0 + OFFSET[0]).contains(&p.x), "{name}: x");
+            assert!((-1.0..=1.0 + OFFSET[1]).contains(&p.y), "{name}: y");
+            assert!((-1.0..=1.0 + OFFSET[2]).contains(&p.z), "{name}: z");
+        }
+    }
+}
+
+#[test]
+fn boolean_union_volume_reference_dyadic_768() {
     let (a, b) = overlapping_boxes();
     // Closed-form box overlap is (9/8)(11/8)(13/8) = 1287/512.
     let expected = [6905.0 / 512.0, 1287.0 / 512.0, 2809.0 / 512.0];
@@ -127,7 +190,7 @@ fn boolean_union_volume_reference() {
 }
 
 #[test]
-fn boolean_result_watertight() {
+fn boolean_result_watertight_dyadic_768() {
     let (a, b) = overlapping_boxes();
     for (name, operation) in OPERATIONS {
         let result = operation(&a, &b).unwrap_or_else(|e| panic!("{name}: {e}"));
