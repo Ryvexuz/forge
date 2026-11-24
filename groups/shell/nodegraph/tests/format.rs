@@ -490,3 +490,28 @@ fn write_refuses_unwritable_graphs() {
     assert!(text_allowed(""));
     assert!(!text_allowed("C:"));
 }
+
+#[test]
+fn misplaced_header_is_a_line_without_comma() {
+    const S: &str = "schema=1\nkind=subgraph\nnodes\n0,math.constant,0,0,value=1\n1,math.add,50,0,\nedges\n0.out,1.a\nexports\nrhs,1.b,in\nsum,1.out,out\n";
+    refuses(
+        &S.replace("sum,1.out,out", "kind=bad,1.out,out"),
+        bad_name(10, "kind=bad"),
+    );
+    refuses(
+        &S.replace("sum,1.out,out", "schema=x,1.out,out"),
+        bad_name(10, "schema=x"),
+    );
+    refuses(
+        &S.replace("1,math.add,50,0,", "kind=x,math.add,50,0,"),
+        bad_field(5, "id"),
+    );
+    refuses(
+        "schema=1\nkind=graph\nnodes\nschema=1\nedges\n",
+        FormatError::BadHeader { line: 4 },
+    );
+    refuses(
+        "schema=1\nkind=graph\nnodes\nedges\nkind=graph\n",
+        FormatError::BadHeader { line: 5 },
+    );
+}

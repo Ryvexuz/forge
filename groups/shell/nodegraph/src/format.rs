@@ -279,7 +279,9 @@ pub fn parse(text: &str, registry: &KindRegistry) -> Result<Graph, FormatError> 
             (_, "nodes" | "edges" | "exports") => {
                 return Err(FormatError::BadHeader { line });
             }
-            _ if text.starts_with("schema=") || text.starts_with("kind=") => {
+            _ if !text.contains(',')
+                && (text.starts_with("schema=") || text.starts_with("kind=")) =>
+            {
                 return Err(FormatError::BadHeader { line });
             }
             _ => {}

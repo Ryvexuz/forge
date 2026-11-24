@@ -76,6 +76,7 @@ present) and `std::error::Error`. Lines are 1-based.
 - `UnknownVersion { found }`: line 1 starts `schema=` but its suffix is not `1`.
 - `BadHeader { line }`: malformed schema/kind header, or missing, extra or
   misplaced section header; a missing final header uses line count plus one.
+  After line 2, a line with no comma that starts `schema=` or `kind=` is a misplaced header; a line with a comma is an item.
 - `BadField { line, field }`: unparseable field; field is exactly `fields`,
   `id`, `x`, `y`, `param`, `value`, `edge` or `dir`. `fields` means wrong column
   count; `param` means wrong count, name or assignment structure.
