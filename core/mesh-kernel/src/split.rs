@@ -81,6 +81,14 @@ fn index(indices: &[(Point, usize)], p: Point) -> usize {
     indices[i].1
 }
 
+// A non-corner cut at another component's vertex position still maps to that
+// vertex: rule 4 creates no new vertex at an input position; out of scope here.
+fn corner_alias(t: Triangle, p: usize, vertices: &[Vec3]) -> usize {
+    t.into_iter()
+        .find(|&v| Point::new(vertices[v]) == Point::new(vertices[p]))
+        .unwrap_or(p)
+}
+
 type Edge = (usize, usize);
 type Triangle = [usize; 3];
 type Adjacency = BTreeMap<Edge, Vec<(usize, usize)>>;
@@ -363,13 +371,24 @@ fn split_body(
     }
     let points: Vec<BTreeSet<usize>> = points
         .iter()
-        .map(|set| set.iter().map(|&p| index(&indices, p)).collect())
+        .enumerate()
+        .map(|(face, set)| {
+            set.iter()
+                .map(|&p| corner_alias(input[face], index(&indices, p), &vertices))
+                .collect()
+        })
         .collect();
     let segments: Vec<BTreeSet<Edge>> = segments
         .iter()
-        .map(|list| {
+        .enumerate()
+        .map(|(face, list)| {
             list.iter()
-                .map(|&(a, b)| edge(index(&indices, a), index(&indices, b)))
+                .map(|&(a, b)| {
+                    edge(
+                        corner_alias(input[face], index(&indices, a), &vertices),
+                        corner_alias(input[face], index(&indices, b), &vertices),
+                    )
+                })
                 .collect()
         })
         .collect();

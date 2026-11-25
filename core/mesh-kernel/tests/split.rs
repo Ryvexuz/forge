@@ -309,3 +309,96 @@ fn split_output_ignores_cut_order() {
     let changed = on_face_zero(&input, vec![Intersection::CoplanarOverlap(poly)]);
     assert_eq!(split_faces(&input, &changed).unwrap().to_bytes(), expected);
 }
+
+fn two_cubes() -> Mesh {
+    let a = cube();
+    let b = cube();
+    let mut triangles = a.to_triangles().1;
+    triangles.extend(b.to_triangles().1.into_iter().map(|t| t.map(|i| i + 8)));
+    let mut vertices = a.vertices;
+    vertices.extend(b.vertices.into_iter().map(|p| v(p.x + 2.0, p.y, p.z)));
+    Mesh::from_triangles(vertices, &triangles).unwrap()
+}
+
+#[test]
+fn split_touching_components_keeps_each_face_corner() {
+    let input = two_cubes();
+    let triangles = input.to_triangles().1;
+    for (start, other) in [(12, 0..8), (0, 8..16)] {
+        let (f, k) = (start..start + 12)
+            .find_map(|f| {
+                triangles[f]
+                    .iter()
+                    .copied()
+                    .find(|&k| other.clone().any(|j| input.vertices[k] == input.vertices[j]))
+                    .map(|k| (f, k))
+            })
+            .unwrap();
+        let [p0, p1, p2] = triangles[f].map(|i| input.vertices[i]);
+        let g = v(
+            (p0.x + p1.x + p2.x) / 3.0,
+            (p0.y + p1.y + p2.y) / 3.0,
+            (p0.z + p1.z + p2.z) / 3.0,
+        );
+        eprintln!("corner alias: f={f} k={k} g={g:?}");
+        let mut cuts = vec![vec![]; input.faces.len()];
+        cuts[f] = vec![segment(input.vertices[k], g)];
+        let out = split_faces(&input, &cuts).unwrap();
+        assert_eq!((out.vertices.len(), out.faces.len()), (17, 26));
+        assert_eq!(out.vertices[16], g);
+        assert!(out.is_watertight());
+        let out_edges = edges(&out);
+        assert!(out_edges.contains(&(k, 16)));
+        assert!(other.clone().all(|j| !out_edges.contains(&(j, 16))));
+        let out_triangles = out.to_triangles().1;
+        // Every new vertex belongs to the component whose face was cut.
+        let component = |i: usize| if i >= 16 { start == 12 } else { i >= 8 };
+        assert!(out_triangles
+            .iter()
+            .all(|t| t.iter().all(|&i| component(i)) || t.iter().all(|&i| !component(i))));
+        if start == 12 {
+            assert_eq!(out_triangles[..12], triangles[..12]);
+        }
+    }
+}
+
+#[test]
+fn split_tagged_touching_components_match_untagged() {
+    use mesh_kernel::intersect::{Feature, TaggedIntersection, TaggedPoint};
+    use mesh_kernel::split::split_faces_tagged;
+
+    let input = two_cubes();
+    let triangles = input.to_triangles().1;
+    let (f, c, k) = (12..24)
+        .find_map(|f| {
+            triangles[f]
+                .iter()
+                .enumerate()
+                .find(|&(_, &k)| input.vertices[..8].contains(&input.vertices[k]))
+                .map(|(c, &k)| (f, c, k))
+        })
+        .unwrap();
+    let [p0, p1, p2] = triangles[f].map(|i| input.vertices[i]);
+    let g = v(
+        (p0.x + p1.x + p2.x) / 3.0,
+        (p0.y + p1.y + p2.y) / 3.0,
+        (p0.z + p1.z + p2.z) / 3.0,
+    );
+    eprintln!("tagged corner alias: f={f} c={c} k={k} g={g:?}");
+    let mut cuts = vec![vec![]; input.faces.len()];
+    cuts[f] = vec![segment(input.vertices[k], g)];
+    let out = split_faces(&input, &cuts).unwrap();
+    let mut tagged_cuts = vec![vec![]; input.faces.len()];
+    tagged_cuts[f] = vec![TaggedIntersection::Segment(
+        TaggedPoint {
+            point: input.vertices[k],
+            on: [Feature::Vertex(c), Feature::Face],
+        },
+        TaggedPoint {
+            point: g,
+            on: [Feature::Face, Feature::Face],
+        },
+    )];
+    let (tagged, _) = split_faces_tagged(&input, &tagged_cuts).unwrap();
+    assert_eq!(tagged.to_bytes(), out.to_bytes());
+}
