@@ -6,6 +6,8 @@ use scene::json::{self, Value};
 use scene::scene::Scene;
 use scene::usd::{compare_scenes, UsdError};
 use std::fs;
+use std::fs::OpenOptions;
+use std::io::Write;
 use std::path::{Component, Path, PathBuf};
 
 pub struct Options {
@@ -175,6 +177,12 @@ pub fn corrupt_x(x: f32) -> Result<f32, String> {
     Ok(shifted)
 }
 
+fn replace_contents(file: &mut std::fs::File, bytes: &[u8]) -> std::io::Result<()> {
+    file.set_len(0)?;
+    file.write_all(bytes)?;
+    file.flush()
+}
+
 pub fn run(options: Options, root: &Path) -> Result<(), String> {
     let base = if options.shared {
         root
@@ -204,8 +212,31 @@ pub fn run(options: Options, root: &Path) -> Result<(), String> {
     let (text, bin) = export_gltf(&written, bin_name).map_err(|e| format!("export {e}"))?;
     let output = resolve(root, &options.output, true)?;
     let bin_path = resolve(root, bin_relative, false)?;
-    fs::write(&bin_path, &bin).map_err(|e| format!("write bin {e}"))?;
-    fs::write(&output, &text).map_err(|e| format!("write gltf {e}"))?;
+    let gltf_existed = fs::symlink_metadata(&output).is_ok();
+    let bin_existed = fs::symlink_metadata(&bin_path).is_ok();
+    {
+        let mut gltf_file = OpenOptions::new()
+            .write(true)
+            .create_new(!gltf_existed)
+            .open(&output)
+            .map_err(|e| format!("write gltf {e}"))?;
+        let mut bin_file = match OpenOptions::new()
+            .write(true)
+            .create_new(!bin_existed)
+            .open(&bin_path)
+        {
+            Ok(file) => file,
+            Err(e) => {
+                drop(gltf_file);
+                if !gltf_existed {
+                    let _ = fs::remove_file(&output);
+                }
+                return Err(format!("write bin {e}"));
+            }
+        };
+        replace_contents(&mut bin_file, &bin).map_err(|e| format!("write bin {e}"))?;
+        replace_contents(&mut gltf_file, text.as_bytes()).map_err(|e| format!("write gltf {e}"))?;
+    }
     let disk_text = fs::read(&output).map_err(|e| format!("read gltf {e}"))?;
     let disk_bin = fs::read(&bin_path).map_err(|e| format!("read bin {e}"))?;
     let b = import_gltf(&disk_text, bin_name, &disk_bin).map_err(|e| format!("import {e}"))?;

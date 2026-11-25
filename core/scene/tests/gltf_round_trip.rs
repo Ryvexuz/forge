@@ -114,7 +114,7 @@ fn example_fixture_routes() {
     let args = ["--in-shared", "fixtures/hierarchy.gltf", "--out", "blocked.gltf"];
     let error = example::run(example::parse(args.map(str::to_owned)).unwrap(), &found).unwrap_err();
     assert!(error.starts_with("write gltf "), "{error}");
-    assert!(root.0.join("blocked.bin").is_file());
+    assert!(!root.0.join("blocked.bin").exists());
 }
 
 #[test]
@@ -357,5 +357,66 @@ fn gltf_round_trip_keeps_signed_zero_and_empty_scene() {
         Err(UsdError::Mismatch {
             what: "node 0 translation".into(),
         })
+    );
+}
+
+#[test]
+fn gltf_roundtrip_never_destroys_old_outputs() {
+    let root = ExampleRoot::new();
+    std::fs::write(root.0.join("broadsword.toml"), "").unwrap();
+    let found = example::find_root(&root.0).unwrap();
+    let out = root.0.join("out");
+    std::fs::create_dir(&out).unwrap();
+    let run = |output| {
+        let args = ["--in", "tests/fixtures/gltf/hierarchy.gltf", "--out", output];
+        example::run(example::parse(args.map(str::to_owned)).unwrap(), &found)
+    };
+
+    std::fs::write(out.join("a.bin"), b"old bin").unwrap();
+    std::fs::create_dir(out.join("a.gltf")).unwrap();
+    let error = run("out/a.gltf").unwrap_err();
+    assert!(error.starts_with("write gltf "), "{error}");
+    assert_eq!(std::fs::read(out.join("a.bin")).unwrap(), b"old bin");
+
+    let b_gltf = out.join("b.gltf");
+    std::fs::write(&b_gltf, b"old gltf").unwrap();
+    let original_permissions = std::fs::metadata(&b_gltf).unwrap().permissions();
+    let mut readonly = original_permissions.clone();
+    readonly.set_readonly(true);
+    std::fs::set_permissions(&b_gltf, readonly).unwrap();
+    std::fs::write(out.join("b.bin"), b"old bin").unwrap();
+    let result = run("out/b.gltf");
+    std::fs::set_permissions(&b_gltf, original_permissions).unwrap();
+    let error = result.unwrap_err();
+    assert!(error.starts_with("write gltf "), "{error}");
+    assert_eq!(std::fs::read(&b_gltf).unwrap(), b"old gltf");
+    assert_eq!(std::fs::read(out.join("b.bin")).unwrap(), b"old bin");
+
+    std::fs::create_dir(out.join("c.bin")).unwrap();
+    let error = run("out/c.gltf").unwrap_err();
+    assert!(error.starts_with("write bin "), "{error}");
+    assert!(!out.join("c.gltf").exists());
+
+    std::fs::write(out.join("d.gltf"), vec![b'x'; 20000]).unwrap();
+    std::fs::write(out.join("d.bin"), vec![b'y'; 20000]).unwrap();
+    run("out/d.gltf").unwrap();
+    let gltf = std::fs::read(out.join("d.gltf")).unwrap();
+    let bin = std::fs::read(out.join("d.bin")).unwrap();
+    assert!(gltf.len() < 20000);
+    assert!(bin.len() < 20000);
+    assert!(std::str::from_utf8(&gltf)
+        .unwrap()
+        .contains(r#""uri":"d.bin""#));
+    let back = import_gltf(&gltf, "d.bin", &bin).unwrap();
+    assert_eq!(back.hierarchy.nodes.len(), 3);
+
+    let mut names: Vec<_> = std::fs::read_dir(&out)
+        .unwrap()
+        .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    assert_eq!(
+        names,
+        ["a.bin", "a.gltf", "b.bin", "b.gltf", "c.bin", "d.bin", "d.gltf"]
     );
 }
