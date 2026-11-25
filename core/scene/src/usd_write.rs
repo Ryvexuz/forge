@@ -171,7 +171,7 @@ pub fn export_usda(scene: &Scene) -> Result<String, ExportError> {
                 &indent,
                 &format!(
                     "int[] faceVertexCounts = {}",
-                    list(mesh.indices.chunks_exact(3).map(|_| 3))
+                    list(mesh.indices.as_chunks::<3>().0.iter().map(|_| 3))
                 ),
             );
             line(

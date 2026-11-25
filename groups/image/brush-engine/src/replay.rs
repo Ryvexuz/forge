@@ -349,7 +349,9 @@ pub fn replay(events: &[PenEvent], settings: &ReplaySettings) -> Result<Replay, 
 pub fn flatten_over_white(replay: &Replay) -> crate::ppm::Image {
     let rgb = replay
         .pixels
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .flat_map(|pixel| {
             let alpha = u32::from(pixel[3]);
             [pixel[0], pixel[1], pixel[2]].map(|channel| {
