@@ -38,7 +38,9 @@ fn demo_args_usage_errors() {
             "--watch",
         ],
         &["--expect-schema", "Vehicle", "fixtures/missing.txt"],
-        &["--glue-proof"],
+        &["--glue-proof", "x"],
+        &["--roundtrip", "VehicleWide", "fixtures/vehicle.v2.txt"],
+        &["--load", "VehicleWide", "fixtures/vehicle.v2.txt"],
     ];
     for args in cases {
         let (code, out, err) = invoke(args, root);
@@ -46,19 +48,6 @@ fn demo_args_usage_errors() {
         assert!(out.is_empty(), "{args:?}: {out}");
         assert!(err.starts_with("reflect_demo: usage: "), "{err}");
         assert_eq!(err.lines().count(), 1, "{err}");
-        let stage = match args.first().copied() {
-            Some("--glue-proof") => Some("R10"),
-            _ => None,
-        };
-        if let Some(stage) = stage {
-            assert_eq!(
-                err,
-                format!(
-                    "reflect_demo: usage: {} is not implemented yet ({stage})\n",
-                    args[0]
-                )
-            );
-        }
     }
 }
 

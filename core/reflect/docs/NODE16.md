@@ -15,7 +15,7 @@
 | `--watch` | none |
 | `--inject-fault` | none |
 
-Types are `Vehicle` and `Wheel`. Files are relative to the crate folder
+Types are `Vehicle` and `Wheel`; `--expect-schema` and `--expect-inspector` also take `VehicleWide`. Files are relative to the crate folder
 `core/reflect`, not the shell's working directory. Only normal path components
 are accepted: no root, drive, empty component, `.` or `..`; both slash styles
 are checked. Control characters are rejected. Values beginning `--` are not
@@ -25,13 +25,6 @@ Exit codes are 0 (PASS), 1 (FAIL), and 2 (usage error, never a silent skip).
 A usage error writes one stderr line `reflect_demo: usage: <message>` and no
 stdout. Non-UTF-8 command-line arguments are usage errors.
 Unreadable fixtures are usage errors naming the file.
-
-The parsed but unavailable modes return 2 with these exact stderr lines:
-
-```text
-reflect_demo: usage: --glue-proof is not implemented yet (R10)
-reflect_demo: usage: --watch is not implemented yet (R10)
-```
 
 Done-check command form, from the Broadsword root (run by the orchestrator):
 `build/bin/broadsword.exe run forge -- cargo run --offline --release -p reflect --example reflect_demo -- <flags>`.
@@ -356,7 +349,7 @@ failures write `reflect_demo: FAIL script <error Display>`, also exiting 1.
 Output write failures follow the shared stderr diagnostic rule. No mode writes
 files, including when a script contains `save`.
 
-## Glue proof, watch and fault injection (to be written by R10)
+## Glue proof, watch and fault injection
 
 ### Watch (R10c-1)
 
@@ -409,3 +402,39 @@ PASS requires golden, text and value comparisons all to succeed, and exits 0;
 otherwise the mode exits 1. Save/load errors report `FAIL inject-fault`.
 Limits come from the existing configuration. The real descriptor remains
 unchanged, so a subsequent ordinary roundtrip can still pass.
+
+### Glue proof (R10c-3)
+
+`--glue-proof` takes no values and writes no files. Vehicle and VehicleWide
+use the same generic `texts` function for schema text, inspector text and saved
+text, with each type's own descriptor and snapshot. The wide value has the
+same six fields as the built-in Vehicle and adds `armor_rating = 2.5`.
+Extra fields are wide field names absent from the base descriptor, in order;
+the summary joins them with commas, or says `none` if there are no extras.
+
+Each diff splits with `str::lines` and removes only the first line starting
+`type `, if present. Nested type headers remain. A longest common subsequence
+table then counts added plus removed lines: one insertion or removal counts
+as 1, a changed line as 2, and identical texts as 0.
+
+A fresh wide value runs two script commands: set `vehicle.armor_rating` to
+7.5, then attempt 11.0 with ` # expect-error`. Script success requires two
+commands, one success, one expected error, and final armor rating exactly 7.5.
+A script failure makes `script_ok=false`.
+
+The scan reads `src/{text,path,script,inspector,watch,abi,registry}.rs` in that
+order. As in `tests/glue.rs`, words split on characters other than ASCII
+alphanumeric or `_`, dropping empty words. `generic_modules_clean` is true
+only when no word equals a sample name in `NAMES`, whose list and order match
+the glue test. Read errors report `FAIL glue-proof cannot read src/<module>.rs:
+<error>`; snapshot, schema and save errors report `FAIL glue-proof <error>`.
+Limits come from the existing configuration.
+
+PASS requires exactly one extra field, all three diff counts exactly 1,
+`script_ok` and `generic_modules_clean`. The mode writes one summary line and
+exits 0 for PASS or 1 for FAIL; setup and output failures use the shared stderr
+diagnostic rule. Expected output:
+
+```text
+glue-proof types=Vehicle,VehicleWide extra_field=armor_rating schema_diff_lines=1 inspector_diff_lines=1 save_diff_lines=1 script_ok=true generic_modules_clean=true result=PASS
+```

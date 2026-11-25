@@ -1,7 +1,7 @@
 use reflect::change::{Change, ChangeSink};
 use reflect::desc::{Reflect, TypeDesc};
 use reflect::limits::Limits;
-use reflect::sample::{DriveMode, Vehicle, Wheel};
+use reflect::sample::{DriveMode, Vehicle, VehicleWide, Wheel};
 use reflect::text::{load_text, save_text, Note};
 use reflect::value::Value;
 use reflect::{inspector, schema, script::run_script};
@@ -10,6 +10,8 @@ use std::path::{Component, Path};
 
 #[path = "reflect_demo/fault.rs"]
 pub mod fault;
+#[path = "reflect_demo/glue_proof.rs"]
+pub mod glue_proof;
 #[path = "reflect_demo/watch.rs"]
 pub mod watch;
 
@@ -65,7 +67,8 @@ pub fn parse(args: &[String]) -> Result<Mode, String> {
         }),
         _ => {
             let ty = args[1].clone();
-            if ty != "Vehicle" && ty != "Wheel" {
+            let wide = ty == "VehicleWide" && flag.starts_with("--expect-");
+            if ty != "Vehicle" && ty != "Wheel" && !wide {
                 return Err(format!("usage: unknown type {ty:?} for {flag}"));
             }
             let file = relative(&args[2])?;
@@ -89,21 +92,11 @@ fn execute(args: &[String], root: &Path, out: &mut dyn Write) -> Result<u8, Stri
         Mode::Script { file, expected } => return script(&file, &expected, root, out),
         Mode::Watch => return watch::run(out),
         Mode::InjectFault => return fault::run(root, out),
-        other => {
-            let (flag, stage) = match other {
-                Mode::GlueProof => ("--glue-proof", "R10"),
-                _ => return Err("usage: invalid mode".into()),
-            };
-            return Err(format!("usage: {flag} is not implemented yet ({stage})"));
-        }
+        Mode::GlueProof => return glue_proof::run(root, out),
     };
     let expected = std::fs::read(root.join(&file))
         .map_err(|e| format!("usage: cannot read {file:?}: {e}"))?;
-    let desc = if ty == "Vehicle" {
-        Vehicle::desc()
-    } else {
-        Wheel::desc()
-    };
+    let desc = descriptor(&ty);
     let (text, prefix) = if is_schema {
         let text = schema::schema_text(&desc).map_err(|e| format!("FAIL schema {e}"))?;
         let hash = schema::schema_hash(&desc).map_err(|e| format!("FAIL schema {e}"))?;
@@ -221,10 +214,10 @@ fn snapshot(object: &dyn Reflect) -> Result<Value, String> {
 }
 
 fn descriptor(ty: &str) -> TypeDesc {
-    if ty == "Vehicle" {
-        Vehicle::desc()
-    } else {
-        Wheel::desc()
+    match ty {
+        "Vehicle" => Vehicle::desc(),
+        "VehicleWide" => VehicleWide::desc(),
+        _ => Wheel::desc(),
     }
 }
 
