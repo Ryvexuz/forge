@@ -42,9 +42,6 @@ impl ChangeSink for Counter {
 
 /// Runs each measurement `runs` times with `ops` operations, returning two lines.
 pub fn report(runs: usize, ops: u64) -> Result<[String; 2], String> {
-    if runs == 0 || ops == 0 {
-        return Err("no median".into());
-    }
     let limits = Limits::parse(include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/reflect.toml"
