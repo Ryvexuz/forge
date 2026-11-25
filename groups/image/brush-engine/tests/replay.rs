@@ -6,8 +6,17 @@ use brush_engine::replay::{
 
 const EVENT_LOG: &str = include_str!("fixtures/event_log_v1.csv");
 const STROKE: &str = include_str!("fixtures/stroke_v1.csv");
-const GOLDEN: &[u8] = include_bytes!("golden/stroke_v1.ppm");
 const DOWN: &str = "0,0,1,pen,down,16.000,32.000,512,0,0";
+
+fn golden_path() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/stroke_v1.ppm")
+}
+fn golden() -> Vec<u8> {
+    std::fs::read(golden_path()).unwrap_or_else(|error| {
+        let path = golden_path().display().to_string();
+        panic!("cannot read {path}: {error}; write it with: cargo test -p brush-engine --test replay -- --ignored --exact write_stroke_golden")
+    })
+}
 
 fn log(rows: &[&str]) -> String {
     let mut text = format!("{SCHEMA_LINE}\n{HEADER_LINE}\n");
@@ -268,6 +277,7 @@ fn stroke_fixture_follows_its_recipe() {
 
 #[test]
 fn stroke_replay_matches_golden() {
+    let golden = golden();
     let events = parse_pen_events(STROKE).unwrap();
     let mut previous = None;
     for _ in 0..2 {
@@ -275,7 +285,7 @@ fn stroke_replay_matches_golden() {
         assert_eq!(result.frames, 50);
         let mut bytes = Vec::new();
         ppm::write(&mut bytes, &flatten_over_white(&result)).unwrap();
-        assert_eq!(bytes.as_slice(), GOLDEN);
+        assert_eq!(bytes.as_slice(), golden.as_slice());
         if let Some(previous) = &previous {
             assert_eq!(&bytes, previous);
         }
@@ -285,7 +295,7 @@ fn stroke_replay_matches_golden() {
 
 #[test]
 fn stroke_golden_has_independent_properties() {
-    let image = ppm::read(GOLDEN).unwrap();
+    let image = ppm::read(golden().as_slice()).unwrap();
     assert_eq!((image.width, image.height), (160, 64));
     let pixel = |x, y| &image.rgb[(y * image.width + x) * 3..][..3];
     // The recipe bounds diameter by 32.5 and fixes the line at y = 32.
@@ -335,7 +345,6 @@ fn flatten_is_exact_over_white() {
 fn write_stroke_golden() {
     let events = parse_pen_events(STROKE).unwrap();
     let result = replay(&events, &STROKE_V1_SETTINGS).unwrap();
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/golden/stroke_v1.ppm");
-    let output = std::fs::File::create(path).unwrap();
+    let output = std::fs::File::create(golden_path()).unwrap();
     ppm::write(output, &flatten_over_white(&result)).unwrap();
 }
