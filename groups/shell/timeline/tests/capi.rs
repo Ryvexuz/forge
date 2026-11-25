@@ -482,13 +482,32 @@ fn rust_signatures(source: &str) -> Vec<Signature> {
     found
 }
 
-fn header_signatures(header: &str) -> Vec<Signature> {
-    header
+fn header_signatures(header: &str) -> Result<Vec<Signature>, String> {
+    let mut in_comment = false;
+    let signatures = header
         .lines()
-        .filter_map(|line| {
-            let tail = line.strip_prefix("int32_t ")?;
-            let (name, rest) = tail.split_once('(').unwrap();
-            let params = rest.strip_suffix(");").expect("single-line prototype");
+        .enumerate()
+        .filter_map(|(i, line)| {
+            if in_comment || line.starts_with("/*") {
+                in_comment = !line.contains("*/");
+                return None;
+            }
+            if line.is_empty() || line.starts_with('#') || matches!(line, "extern \"C\" {" | "}") {
+                return None;
+            }
+            let n = i + 1;
+            Some((n, line))
+        })
+        .map(|(n, line)| {
+            if !line.starts_with("int32_t ") || !line.ends_with(");") {
+                return Err(format!("header line {n}: unexpected {line:?}"));
+            }
+            let bad = || format!("header line {n}: bad prototype {line:?}");
+            let tail = &line["int32_t ".len()..line.len() - 2];
+            let (name, params) = tail.split_once('(').ok_or_else(bad)?;
+            if name.is_empty() || !name.chars().all(|c| c == '_' || c.is_ascii_alphanumeric()) {
+                return Err(bad());
+            }
             let params = if params == "void" {
                 Vec::new()
             } else {
@@ -496,14 +515,20 @@ fn header_signatures(header: &str) -> Vec<Signature> {
                     .split(',')
                     .map(|p| {
                         let p = p.trim();
-                        let end = p.rfind(|ch: char| ch == '*' || ch.is_whitespace()).unwrap();
-                        p[..=end].split_whitespace().collect::<Vec<_>>().join(" ")
+                        let end = p
+                            .rfind(|ch: char| ch == '*' || ch.is_whitespace())
+                            .ok_or_else(bad)?;
+                        Ok(p[..=end].split_whitespace().collect::<Vec<_>>().join(" "))
                     })
-                    .collect()
+                    .collect::<Result<Vec<_>, String>>()?
             };
-            Some((name.to_owned(), params))
+            Ok((name.to_owned(), params))
         })
-        .collect()
+        .collect::<Result<Vec<_>, String>>()?;
+    if in_comment {
+        return Err("header: unclosed comment".to_owned());
+    }
+    Ok(signatures)
 }
 
 fn constants(text: &str, rust: bool) -> BTreeMap<String, i32> {
@@ -535,7 +560,7 @@ fn capi_symbols_match_header() {
     let header = include_str!("../include/timeline.h");
     let functions = rust_signatures(rust);
     assert_eq!(functions.len(), 14);
-    assert_eq!(functions, header_signatures(header));
+    assert_eq!(functions, header_signatures(header).expect("header"));
     let codes = constants(rust, true);
     assert_eq!(codes.len(), 18);
     assert_eq!(codes, constants(header, false));
@@ -549,12 +574,25 @@ fn capi_symbols_match_header() {
     // Behavioural negative controls: a drifted type, extra symbol, missing code,
     // and reordered prototypes must all change the comparison.
     let wrong_type = header.replace("double *out_value", "uint64_t *out_value");
-    assert_ne!(functions, header_signatures(&wrong_type));
+    assert_ne!(functions, header_signatures(&wrong_type).expect("wrong_type"));
     let extra = "\n#[no_mangle]\npub extern \"C\" fn tl_debug_count() -> i32 { 0 }\n";
     assert_ne!(functions, rust_signatures(&format!("{rust}{extra}")));
     let missing_code = header.replace("#define TL_ERR_EVAL -12\n", "");
     assert_ne!(codes, constants(&missing_code, false));
-    let mut reversed = header_signatures(header);
+    let mut reversed = header_signatures(header).expect("header");
     reversed.reverse();
     assert_ne!(functions, reversed);
+    let anchor = "int32_t tl_selftest_panic(void);";
+    for line in [
+        "extern int32_t tl_debug_count(void);",
+        "static int32_t tl_x(void);",
+        "    int32_t tl_indented(void);",
+    ] {
+        let changed = header.replace(anchor, &format!("{line}\n{anchor}"));
+        assert!(header_signatures(&changed)
+            .expect_err("unexpected line")
+            .starts_with("header line 86: unexpected"));
+    }
+    let commented = header.replace(anchor, &format!("/* int32_t tl_old(void); */\n{anchor}"));
+    assert_eq!(functions, header_signatures(&commented).expect("comment"));
 }
