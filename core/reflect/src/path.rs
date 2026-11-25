@@ -253,8 +253,9 @@ fn walk<'a>(
     let mut prefix = field.name.clone();
     let mut target = Some(field);
     let mut kind = &field.kind;
+    let mut first_readonly: Option<String> = None;
     if writing && field.readonly {
-        return Err(AccessError::ReadOnly { path: prefix });
+        first_readonly = Some(prefix.clone());
     }
     for segment in path.segments.iter().skip(1) {
         prefix = extended(&prefix, segment);
@@ -263,8 +264,8 @@ fn walk<'a>(
                 let missing = || no_field(&text, name);
                 let i = desc.field_index(name).ok_or_else(missing)?;
                 let f = desc.field(i).ok_or_else(missing)?;
-                if writing && f.readonly {
-                    return Err(AccessError::ReadOnly { path: prefix });
+                if writing && f.readonly && first_readonly.is_none() {
+                    first_readonly = Some(prefix.clone());
                 }
                 (i, &f.kind, Some(f))
             }
@@ -307,6 +308,9 @@ fn walk<'a>(
         };
         kind = next;
         target = next_field;
+    }
+    if let Some(path) = first_readonly {
+        return Err(AccessError::ReadOnly { path });
     }
     Ok((value, kind, target))
 }

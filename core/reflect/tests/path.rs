@@ -576,3 +576,56 @@ fn path_refused_sets_change_nothing() {
         },
     );
 }
+
+#[test]
+fn set_path_walk_errors_come_before_read_only() {
+    let ro = |text: &str| E::ReadOnly { path: text.into() };
+    let cases = [
+        (
+            "serial.x",
+            V::U64(1),
+            E::NotAStruct {
+                path: "serial.x".into(),
+                kind: "u64",
+            },
+        ),
+        (
+            "serial[0]",
+            V::U64(1),
+            E::NotIndexable {
+                path: "serial[0]".into(),
+                kind: "u64",
+            },
+        ),
+        (
+            "wheels[0].id.z",
+            V::U64(1),
+            E::NotAStruct {
+                path: "wheels[0].id.z".into(),
+                kind: "u64",
+            },
+        ),
+        (
+            "wheels[0].id[1]",
+            V::U64(1),
+            E::NotIndexable {
+                path: "wheels[0].id[1]".into(),
+                kind: "u64",
+            },
+        ),
+        (
+            "wheels[9].id",
+            V::U64(1),
+            E::IndexOutOfRange {
+                path: "wheels[9].id".into(),
+                index: 9,
+                len: 2,
+            },
+        ),
+        ("serial", V::U64(8), ro("serial")),
+        ("wheels[0].id", V::U64(9), ro("wheels[0].id")),
+    ];
+    for (text, value, error) in cases {
+        refused(text, value, error);
+    }
+}
