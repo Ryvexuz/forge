@@ -31,7 +31,6 @@ The parsed but unavailable modes return 2 with these exact stderr lines:
 ```text
 reflect_demo: usage: --glue-proof is not implemented yet (R10)
 reflect_demo: usage: --watch is not implemented yet (R10)
-reflect_demo: usage: --inject-fault is not implemented yet (R10)
 ```
 
 Done-check command form, from the Broadsword root (run by the orchestrator):
@@ -388,3 +387,25 @@ event 3 watcher=b path=vehicle.wheels[1].steered old=false new=true
 
 Check 1.6.8's `1200 -> 1350` predates the Value text rule: the exact first
 change is `1200.0 -> 1350.0`, using finite-float Debug tokens.
+
+### Fault injection (R10c-2)
+
+`--inject-fault` takes no values and writes no files. It builds a fresh Vehicle
+descriptor without `mass_kg`, retaining the name, version and other fields in
+order. Both writer and reader use this broken descriptor and the projected
+value, so their text agrees. The golden fixture and comparison with the real,
+unprojected Vehicle value catch the missing field.
+
+Expected output (exit 1):
+
+```text
+fault injected: Vehicle field mass_kg dropped from the descriptor
+roundtrip Vehicle bytes=235 golden=false text_identical=true value_equal=false result=FAIL
+diff line=2
+```
+
+The seam breaks only an input; it never skips or inverts a comparison.
+PASS requires golden, text and value comparisons all to succeed, and exits 0;
+otherwise the mode exits 1. Save/load errors report `FAIL inject-fault`.
+Limits come from the existing configuration. The real descriptor remains
+unchanged, so a subsequent ordinary roundtrip can still pass.

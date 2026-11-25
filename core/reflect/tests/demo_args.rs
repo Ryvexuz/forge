@@ -39,7 +39,6 @@ fn demo_args_usage_errors() {
         ],
         &["--expect-schema", "Vehicle", "fixtures/missing.txt"],
         &["--glue-proof"],
-        &["--inject-fault"],
     ];
     for args in cases {
         let (code, out, err) = invoke(args, root);
@@ -48,7 +47,7 @@ fn demo_args_usage_errors() {
         assert!(err.starts_with("reflect_demo: usage: "), "{err}");
         assert_eq!(err.lines().count(), 1, "{err}");
         let stage = match args.first().copied() {
-            Some("--glue-proof" | "--inject-fault") => Some("R10"),
+            Some("--glue-proof") => Some("R10"),
             _ => None,
         };
         if let Some(stage) = stage {
