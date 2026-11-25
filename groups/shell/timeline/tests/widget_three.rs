@@ -86,7 +86,7 @@ fn outputs(view: &TimelineView) -> Outputs {
     let anim = AnimationDriver::new(track.clips[0].clone(), track.channels.clone())
         .expect("outputs step i=all: animation construction");
     assert_eq!(track.kind, anim.kind(), "outputs step i=all: animation kind");
-    let mut value = [0.0];
+    let mut value = [f64::NAN]; // An unwritten animation sample must fail even when zero is expected.
     let result = anim.evaluate(p..Time(p.0 + 1), &mut value);
     let anim = optional_sample(result, value[0]);
 
@@ -117,7 +117,7 @@ fn outputs(view: &TimelineView) -> Outputs {
     )
     .expect("outputs step i=all: video construction");
     assert_eq!(track.kind, video.kind(), "outputs step i=all: video kind");
-    let mut pixels = [0.0; 8];
+    let mut pixels = [255.0; 8]; // Unwritten high bytes must expose low-byte-only frame writes.
     let result = video.evaluate(p..Time(p.0 + 1), &mut pixels);
     let video = optional_sample(result, 0.0).map(|_| u64::from_le_bytes(pixels.map(|v| v as u8)));
     Outputs {
