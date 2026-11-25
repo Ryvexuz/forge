@@ -27,6 +27,12 @@ struct Args {
     time_budget_ms: Option<u64>,
 }
 
+fn collect_args(args: impl IntoIterator<Item = std::ffi::OsString>) -> Result<Vec<String>, String> {
+    args.into_iter()
+        .map(|arg| arg.into_string().map_err(|_| "non-UTF-8 argument".to_owned()))
+        .collect()
+}
+
 fn parse_args(args: &[String]) -> Result<Args, String> {
     let (mut force_full, mut time, mut budget) = (false, false, None);
     let mut args = args.iter();
@@ -427,7 +433,7 @@ fn time_shape(r: &KindRegistry, counter: &Cell<u64>, budget: u64) -> (String, bo
 }
 
 fn main() {
-    let args = match parse_args(&std::env::args().skip(1).collect::<Vec<_>>()) {
+    let args = match collect_args(std::env::args_os().skip(1)).and_then(|a| parse_args(&a)) {
         Ok(args) => args,
         Err(reason) => {
             println!("bench500: refused {reason}");
@@ -542,5 +548,36 @@ mod tests {
                 false
             )
         );
+    }
+
+    #[test]
+    fn collect_args_refuses_non_utf8() {
+        use std::ffi::OsString;
+        let valid = ["--time", "--max-incremental-ms", "50"];
+        assert_eq!(
+            collect_args(valid.map(OsString::from)),
+            Ok(valid.map(str::to_owned).to_vec())
+        );
+        assert_eq!(collect_args(Vec::<OsString>::new()), Ok(vec![]));
+        assert_eq!(
+            collect_args(["\u{ff15}"].map(OsString::from)),
+            Ok(vec!["\u{ff15}".to_owned()])
+        );
+        #[cfg(windows)]
+        let bad = <OsString as std::os::windows::ffi::OsStringExt>::from_wide(&[0x0035, 0xD800]);
+        #[cfg(unix)]
+        let bad = <OsString as std::os::unix::ffi::OsStringExt>::from_vec(vec![0x35, 0xFF]);
+        #[cfg(any(windows, unix))]
+        for args in [
+            vec![bad.clone()],
+            vec![OsString::from("--time"), bad.clone()],
+            vec![
+                OsString::from("--time"),
+                OsString::from("--max-incremental-ms"),
+                bad,
+            ],
+        ] {
+            assert_eq!(collect_args(args), Err("non-UTF-8 argument".to_owned()));
+        }
     }
 }
